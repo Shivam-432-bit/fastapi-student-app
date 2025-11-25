@@ -1,0 +1,11 @@
+.venv
+.venv310
+__pycache__
+*.pyc
+.DS_Store
+.env
+.envrc
+server.log
+ollama.log
+uploads/
+student/chroma_store/
