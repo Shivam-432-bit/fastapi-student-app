@@ -8,7 +8,7 @@ class StudentCreate(BaseModel):
     last_name: str
     email: str
     age: int
-    grade: str  # New field for student grade
+    grade: Optional[str] = None  # Optional field for student grade
 
 class StudentUpdate(BaseModel):
     first_name: Optional[str] = None
@@ -23,7 +23,7 @@ class StudentResponse(BaseModel):
     last_name: str
     email: str
     age: int
-    grade: str  # New field for student grade
+    grade: Optional[str] = None  # Optional for backwards compatibility
     
     class Config:
         from_attributes = True

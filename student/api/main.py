@@ -4,6 +4,8 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from student.core.database import create_tables
 from student.doc_summarizer.endpoint import router
+from student.routers import auth, students
+from student.routers import bulk_upload
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -12,28 +14,34 @@ async def lifespan(app: FastAPI):
 
 # Create FastAPI app
 app = FastAPI(
-    title="Student API with RAG",
-    description="A FastAPI application with RAG-powered document search and AI Q&A",
+    title="Student API with JWT",
+    description="A modular FastAPI application for student management with JWT authentication",
     version="2.0.0",
     lifespan=lifespan
 )
 
 app.include_router(router, prefix="/api", tags=["documents"])
 
+# Include routers
+app.include_router(auth.router, prefix="/api")
+app.include_router(students.router, prefix="/api")
+app.include_router(bulk_upload.router, prefix="/api")
+
 # Root endpoint
 @app.get("/")
 def read_root():
     return {
-        "message": "Student API v2.0 - RAG Implementation",
+        "message": "Student API v2.0 - Modular Architecture",
         "status": "healthy",
         "documentation": "/docs",
         "version": "2.0.0",
         "features": [
-            "Document Upload (PDF, Images)",
-            "OCR for Scanned Documents",
-            "Semantic Search",
-            "AI-Powered Q&A with Ollama",
-            "Persistent Vector Storage"
+            "JWT Authentication",
+            "Role-based Access Control", 
+            "Student Management",
+            "Bulk Upload (CSV/Excel)",
+            "RAG-powered Search",
+            "Modular Architecture"
         ]
     }
 

@@ -3,7 +3,12 @@ sqlalchemy
 pymysql
 python-dotenv
 python-jose[cryptography]
+passlib[argon2]
+argon2-cffi
 uvicorn
+pandas
+openpyxl
+faker
 sentence-transformers
 numpy
 faiss-cpu
