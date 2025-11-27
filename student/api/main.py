@@ -1,3 +1,5 @@
+import student.core.chromadb_compat  # MUST be first to patch chromadb
+
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from sqlalchemy.exc import SQLAlchemyError

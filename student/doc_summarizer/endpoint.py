@@ -2,7 +2,12 @@ from fastapi import APIRouter, File, UploadFile, HTTPException, Depends, Backgro
 from sqlalchemy.orm import Session, sessionmaker
 from student.core.database import engine
 from langdetect import detect
+
+# Import compatibility patch before chromadb
+import student.core.chromadb_compat
 import chromadb
+# Restore our app env vars after chromadb import
+student.core.chromadb_compat.restore_env()
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_ollama import ChatOllama
@@ -24,15 +29,24 @@ from student.core.models import DocumentResponse
 #               VECTOR DB INIT
 # --------------------------------------------------------
 
-# Use PersistentClient to ensure data survives restarts
+# Use Client with persist_directory to ensure data survives restarts
 CHROMA_DB_DIR = "student/chroma_store"
 os.makedirs(CHROMA_DB_DIR, exist_ok=True)
-chroma_client = chromadb.PersistentClient(path=CHROMA_DB_DIR)
+chroma_client = chromadb.Client(chromadb.config.Settings(
+    chroma_db_impl="duckdb+parquet",
+    persist_directory=CHROMA_DB_DIR
+))
 
 collection = chroma_client.get_or_create_collection(
     name="documents",
     metadata={"hnsw:space": "cosine"}
 )
+
+# chromadb Collection objects expect a private `_client` attribute that is not
+# automatically populated when running under Pydantic v2. Attach the client
+# explicitly so downstream calls (query, add, etc.) work.
+if not hasattr(collection, "_client"):
+    collection._client = chroma_client
 
 # --------------------------------------------------------
 #               LAZY LOADING MODELS
@@ -192,75 +206,11 @@ def list_documents(db: Session = Depends(get_db)):
 
 
 # --------------------------------------------------------
-#               BACKGROUND PROCESSING TASK
-# --------------------------------------------------------
-
-def process_document_task(doc_id: int, file_path: str, content_type: str):
-    """Background task to process document: Extract -> Chunk -> Embed -> Store"""
-    print(f"⏳ [Background] Starting processing for Doc ID: {doc_id}")
-    
-    SessionLocal = sessionmaker(bind=engine)
-    db = SessionLocal()
-    
-    try:
-        doc = db.query(Document).filter(Document.id == doc_id).first()
-        if not doc:
-            print(f"❌ [Background] Document {doc_id} not found.")
-            return
-
-        doc.status = "processing"
-        db.commit()
-
-        with open(file_path, "rb") as f:
-            content = f.read()
-
-        text = extract_text(content, content_type)
-        lang = detect_language(text)
-        
-        chunks = text_splitter.split_text(text)
-        if not chunks:
-            raise ValueError("No text found in document (OCR failed or empty)")
-
-        embeddings = get_embed().embed_documents(chunks)
-        
-        ids = [f"doc_{doc.id}_chunk_{i}" for i in range(len(chunks))]
-        metadatas = [
-            {
-                "source": doc.filename, 
-                "sql_doc_id": doc.id,
-                "lang": lang, 
-                "chunk_index": i
-            } 
-            for i in range(len(chunks))
-        ]
-        
-        collection.add(
-            documents=chunks,
-            embeddings=embeddings,
-            metadatas=metadatas,
-            ids=ids
-        )
-        
-        doc.status = "completed"
-        db.commit()
-        print(f"✅ [Background] Document {doc_id} processing complete.")
-
-    except Exception as e:
-        print(f"❌ [Background] Error processing document {doc_id}: {e}")
-        doc.status = "failed"
-        doc.error_message = str(e)
-        db.commit()
-    finally:
-        db.close()
-
-
-# --------------------------------------------------------
 #      PROCESS + EMBED + STORE CHUNKS (DOC INGESTION)
 # --------------------------------------------------------
 
 @router.post("/upload-and-process", response_model=DocumentResponse)
 async def upload_and_process(
-    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
@@ -269,6 +219,9 @@ async def upload_and_process(
         raise HTTPException(status_code=400, detail=f"Invalid file type. Allowed: {allowed_types}")
 
     try:
+        # Import Celery task here to avoid circular import
+        from student.workers.tasks import process_document_task
+        
         upload_dir = "uploads"
         os.makedirs(upload_dir, exist_ok=True)
         
@@ -293,7 +246,8 @@ async def upload_and_process(
         db.commit()
         db.refresh(new_doc)
 
-        background_tasks.add_task(process_document_task, new_doc.id, file_path, file.content_type)
+        # Use Celery task asynchronously
+        process_document_task.delay(new_doc.id, file_path, file.content_type)
         
         return new_doc
 
@@ -315,9 +269,22 @@ def perform_search(doc_id: str, query: str):
     else:
         where_filter = {"source": doc_id}
 
-    results = collection.query(
+    # Cap n_results to the number of elements in the index to avoid
+    # ValueError("Number of requested results ...") under Pydantic v2.
+    try:
+        max_results = chroma_client._count(collection.id)
+    except Exception:
+        max_results = 10
+
+    if max_results == 0:
+        return []
+
+    n_results = min(10, max_results)
+
+    results = chroma_client._query(
+        collection.id,
         query_embeddings=[query_embed],
-        n_results=10,
+        n_results=n_results,
         where=where_filter
     )
     
