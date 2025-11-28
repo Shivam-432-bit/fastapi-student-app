@@ -1,4 +1,4 @@
-from fastapi import APIRouter, File, UploadFile, HTTPException, Depends, BackgroundTasks
+from fastapi import APIRouter, File, UploadFile, HTTPException, Depends
 from sqlalchemy.orm import Session, sessionmaker
 from student.core.database import engine
 from langdetect import detect
@@ -10,8 +10,6 @@ import chromadb
 student.core.chromadb_compat.restore_env()
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_ollama import ChatOllama
-from langchain_core.prompts import ChatPromptTemplate
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 import torch
 import fitz  # PyMuPDF
@@ -24,6 +22,7 @@ from datetime import datetime
 
 from student.core.database import get_db, Document
 from student.core.models import DocumentResponse
+from student.utils.llm import answer_with_llm
 
 # --------------------------------------------------------
 #               VECTOR DB INIT
@@ -32,6 +31,13 @@ from student.core.models import DocumentResponse
 # Use Client with persist_directory to ensure data survives restarts
 CHROMA_DB_DIR = "student/chroma_store"
 os.makedirs(CHROMA_DB_DIR, exist_ok=True)
+
+ALLOWED_CONTENT_TYPES = ["application/pdf", "image/jpeg", "image/png", "image/jpg"]
+CHUNK_SIZE = 1000           # target characters per chunk
+CHUNK_OVERLAP = 150         # overlap to preserve context
+BATCH_EMBED_SIZE = 32       # how many chunks to embed in one call
+TOP_K_VECTOR = 20           # how many vectors to pull before reranking
+TOP_K_RETURN = 5    
 chroma_client = chromadb.Client(chromadb.config.Settings(
     chroma_db_impl="duckdb+parquet",
     persist_directory=CHROMA_DB_DIR
@@ -56,7 +62,6 @@ _embed = None
 _reranker_tokenizer = None
 _reranker_model = None
 _ocr_reader = None
-_llm = None
 
 def get_embed():
     global _embed
@@ -68,13 +73,6 @@ def get_embed():
             encode_kwargs={"normalize_embeddings": True}
         )
     return _embed
-
-def get_llm():
-    global _llm
-    if _llm is None:
-        print("Loading Ollama Model...")
-        _llm = ChatOllama(model="llama3") 
-    return _llm
 
 def get_reranker():
     global _reranker_tokenizer, _reranker_model
@@ -136,8 +134,8 @@ def rerank(query, chunks):
 # --------------------------------------------------------
 
 text_splitter = RecursiveCharacterTextSplitter(
-    chunk_size=800,
-    chunk_overlap=100,
+    chunk_size=CHUNK_SIZE,
+    chunk_overlap=CHUNK_OVERLAP,
     separators=["\n\n", "\n", ". ", "? ", "! ", "; ", " "]
 )
 
@@ -322,27 +320,16 @@ def ask_document(doc_id: str, query: str):
             return {"answer": "I couldn't find any relevant information in the document."}
             
         context_text = "\n\n".join([r["text"] for r in results])
-        
-        llm = get_llm()
-        
-        prompt = ChatPromptTemplate.from_template("""
-        Answer the question based only on the following context:
-        
-        {context}
-        
-        Question: {question}
-        """)
-        
-        chain = prompt | llm
-        try:
-            response = chain.invoke({"context": context_text, "question": query})
-        except Exception as e:
-            if "Connection refused" in str(e):
-                raise HTTPException(status_code=503, detail="Ollama service is not reachable. Please ensure Ollama is running (e.g., 'ollama serve').")
-            raise e
-        
+
+        answer = answer_with_llm(query, context_text)
+        if answer.startswith("Error communicating with LLM"):
+            raise HTTPException(
+                status_code=503,
+                detail=answer
+            )
+
         return {
-            "answer": response.content,
+            "answer": answer,
             "sources": results
         }
         
@@ -351,3 +338,54 @@ def ask_document(doc_id: str, query: str):
     except Exception as e:
         print(f"Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/pdf/list")
+async def list_pdfs():
+    """
+    Return a list of all PDF filenames stored in ChromaDB as metadata 'source'.
+    """
+    if collection is None:
+        return {"files": []}
+
+    try:
+        items = collection.get()  # returns ids, documents, metadatas (may be nested)
+        raw_metas = items.get("metadatas", [])
+
+        sources = set()
+
+        # Metadata can be either a list of dicts or a nested list (depending on call)
+        for meta in raw_metas:
+            if not meta:
+                continue
+
+            # If meta is a dict with 'source'
+            if isinstance(meta, dict):
+                src = meta.get("source")
+                if isinstance(src, str) and src.lower().endswith(".pdf"):
+                    sources.add(src)
+                continue
+
+            # If meta is an iterable (list/tuple) of dicts
+            if isinstance(meta, (list, tuple)):
+                for inner in meta:
+                    if not inner or not isinstance(inner, dict):
+                        continue
+                    src = inner.get("source")
+                    if isinstance(src, str) and src.lower().endswith(".pdf"):
+                        sources.add(src)
+                continue
+
+            # Unknown shape: try to treat it as dict-like via getattr
+            try:
+                src = meta.get("source")
+            except Exception:
+                src = None
+            if isinstance(src, str) and src.lower().endswith(".pdf"):
+                sources.add(src)
+
+        # Return a deterministic list sorted alphabetically
+        return {"files": sorted(sources)}
+
+    except Exception as exc:
+        print("Error loading PDF list:", exc)
+        return {"files": []}

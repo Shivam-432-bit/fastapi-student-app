@@ -1,11 +1,38 @@
+# Python
 .venv
 .venv310
 __pycache__
 *.pyc
-.DS_Store
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Environment
 .env
+.env.backup
 .envrc
+
+# Logs
+*.log
 server.log
 ollama.log
+celery.log
+nohup.out
+
+# macOS
+.DS_Store
+
+# Uploads and data
 uploads/
 student/chroma_store/
+
+# IDE
+.vscode/
+.idea/
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*~

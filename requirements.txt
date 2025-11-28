@@ -13,7 +13,7 @@ sentence-transformers
 numpy
 faiss-cpu
 pandas
-chromadb
+chromadb>=0.4.22
 langdetect
 langchain-text-splitters
 langchain-huggingface
@@ -22,3 +22,8 @@ torch
 pymupdf
 easyocr
 langchain-ollama
+celery
+redis
+pydantic-settings
+requests
+httpx

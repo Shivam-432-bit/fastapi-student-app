@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<body>
+    <h2>Ask Questions from Your Documents</h2>
+
+    <!-- Dropdown will auto-load PDF names -->
+    <label>Select PDF:</label>
+    <select id="choice"></select>
+
+    <br><br>
+
+    <input id="msg" placeholder="Ask something...">
+    <button onclick="sendQuestion()">Ask</button>
+
+    <h3>Response:</h3>
+    <div id="output" style="white-space: pre-wrap;"></div>
+
+<script>
+// -----------------------------------------------------
+// Load dropdown automatically from FastAPI
+// -----------------------------------------------------
+async function loadPDFList() {
+    const res = await fetch("/api/pdf/list");
+    const data = await res.json();
+
+    const dropdown = document.getElementById("choice");
+    dropdown.innerHTML = "";
+
+    if (!data.files || data.files.length === 0) {
+        dropdown.innerHTML = "<option>No PDFs found</option>";
+        return;
+    }
+
+    data.files.forEach(file => {
+        const opt = document.createElement("option");
+        opt.value = file;
+        opt.textContent = file;
+        dropdown.appendChild(opt);
+    });
+}
+
+loadPDFList();
+
+
+// -----------------------------------------------------
+// Send question → SSE stream from FastAPI
+// -----------------------------------------------------
+async function sendQuestion() {
+    const question = document.getElementById("msg").value;
+    const source = document.getElementById("choice").value;
+
+    if (!question.trim()) {
+        alert("Enter a question");
+        return;
+    }
+
+    document.getElementById("output").innerHTML = "";
+
+    const response = await fetch("/chat/stream", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ question, source })
+    });
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+
+    while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split("\n");
+
+        for (let line of lines) {
+            if (line.startsWith("data: ")) {
+                const text = line.replace("data: ", "");
+                if (text === "[END]") return;
+                document.getElementById("output").innerHTML += text;
+            }
+        }
+    }
+}
+</script>
+
+</body>
+</html>

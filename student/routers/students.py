@@ -2,14 +2,19 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
 
-from student.core.database import get_db, Student
+from student.core.database import get_db, Student, User
 from student.core.models import StudentCreate, StudentUpdate, StudentResponse
+from student.middleware.dependencies import get_current_user, require_admin_or_teacher, require_admin
 
 router = APIRouter(prefix="/students", tags=["Students"])
 
 @router.post("/", response_model=StudentResponse, status_code=status.HTTP_201_CREATED)
-def create_student(student: StudentCreate, db: Session = Depends(get_db)):
-    """Create a new student."""
+def create_student(
+    student: StudentCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Create a new student. Requires authentication."""
     
     # Check if email already exists
     existing_student = db.query(Student).filter(Student.email == student.email).first()
@@ -30,15 +35,20 @@ def create_student(student: StudentCreate, db: Session = Depends(get_db)):
 def list_students(
     skip: int = 0,
     limit: int = 100,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    """List all students with pagination."""
+    """List all students with pagination. Requires authentication."""
     students = db.query(Student).offset(skip).limit(limit).all()
     return students
 
 @router.get("/{student_id}", response_model=StudentResponse)
-def get_student(student_id: int, db: Session = Depends(get_db)):
-    """Get a specific student by ID."""
+def get_student(
+    student_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get a specific student by ID. Requires authentication."""
     student = db.query(Student).filter(Student.id == student_id).first()
     
     if not student:
@@ -53,9 +63,10 @@ def get_student(student_id: int, db: Session = Depends(get_db)):
 def update_student(
     student_id: int,
     student_update: StudentUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin_or_teacher)
 ):
-    """Update a student's information."""
+    """Update a student's information. Requires admin or teacher role."""
     student = db.query(Student).filter(Student.id == student_id).first()
     
     if not student:
@@ -75,8 +86,12 @@ def update_student(
     return student
 
 @router.delete("/{student_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_student(student_id: int, db: Session = Depends(get_db)):
-    """Delete a student."""
+def delete_student(
+    student_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Delete a student. Requires admin role."""
     student = db.query(Student).filter(Student.id == student_id).first()
     
     if not student:
