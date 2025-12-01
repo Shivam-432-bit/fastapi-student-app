@@ -11,6 +11,8 @@ from student.doc_summarizer.endpoint import router
 from student.routers import auth, students
 from student.routers import bulk_upload
 from student.api import ws_router
+from student.api.chats_router import router as chats_router
+from student.api.websocket_test import router as test_ws_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -35,6 +37,7 @@ app.add_middleware(
 )
 
 app.include_router(ws_router.router)
+app.include_router(test_ws_router)
 
 app.include_router(router, prefix="/api", tags=["documents"])
 
@@ -42,6 +45,7 @@ app.include_router(router, prefix="/api", tags=["documents"])
 app.include_router(auth.router, prefix="/api")
 app.include_router(students.router, prefix="/api")
 app.include_router(bulk_upload.router, prefix="/api")
+app.include_router(chats_router, tags=["chats"])
 
 # Root endpoint now serves a simple frontend page. API docs remain available at `/docs`.
 @app.get("/")

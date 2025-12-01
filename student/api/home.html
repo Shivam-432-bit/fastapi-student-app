@@ -1,361 +1,863 @@
-<!DOCTYPE html>
-<html>
+<!doctype html>
+<html lang="en">
 <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Document Chat</title>
-    <style>
-        body { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Arial; background:#f6f7fb; margin:0; padding:0; display:flex; align-items:center; justify-content:center; height:100vh }
-        .app { width:720px; max-width:96%; background:white; box-shadow:0 6px 20px rgba(0,0,0,.08); border-radius:12px; overflow:hidden }
-        .header { padding:16px 20px; border-bottom:1px solid #eee; display:flex; gap:12px; align-items:center }
-        .logo { width:44px; height:44px; background:linear-gradient(135deg,#6c5ce7,#00b894); border-radius:8px }
-        .title { font-weight:600 }
-        .controls { padding:12px 20px; display:flex; gap:8px; align-items:center; border-bottom:1px solid #f0f0f3 }
-        select, input[type="text"] { padding:8px 10px; border-radius:8px; border:1px solid #e6e6ef }
-        .status-banner { display:none; align-items:center; gap:10px; padding:10px 20px; border-bottom:1px solid #f0f0f3; background:#fbfbff; font-size:13px; color:#555 }
-        .status-banner.active { display:flex }
-        .status-banner.success { color:#1d8242 }
-        .status-banner.error { color:#c0392b }
-        .spinner { width:14px; height:14px; border-radius:50%; border:2px solid rgba(108,92,231,.3); border-top-color:#6c5ce7; animation:spin .9s linear infinite }
-        .spinner.done { border-color:currentColor; border-top-color:currentColor; animation:none }
-        .status-banner.success .spinner { color:#1d8242 }
-        .status-banner.error .spinner { color:#c0392b }
-        @keyframes spin { to { transform:rotate(360deg); } }
-        .chat { height:420px; overflow:auto; padding:18px; display:flex; flex-direction:column; gap:12px; background:linear-gradient(180deg,#fff,#fafbff) }
-        .msg { max-width:78%; padding:12px 14px; border-radius:14px; line-height:1.4 }
-        .msg.user { background:#e6f7ff; align-self:flex-end; border-bottom-right-radius:4px }
-        .msg.assistant { background:#f1f3ff; align-self:flex-start; border-bottom-left-radius:4px }
-        .footer { padding:12px 16px; display:flex; gap:8px; align-items:center; border-top:1px solid #eee }
-        .btn { background:#6c5ce7; color:white; padding:8px 12px; border-radius:10px; border:none; cursor:pointer }
-        .btn.danger { background:#ff6b6b }
-        .btn.secondary { background:#eee; color:#333 }
-        .small { font-size:13px; color:#666 }
-    </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Document Chat — Modern</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+/* -------------------------
+   THEME VARIABLES (default: light)
+   ------------------------- */
+:root{
+  --bg: #f6f7fb;
+  --panel: #ffffff;
+  --muted: #6b7280;
+  --text: #0f1724;
+  --accent: #4f46e5;
+  --bubble-user: #eaf2ff;
+  --bubble-assistant: #f3f4f6;
+  --border: #e6e9ef;
+  --glass: rgba(255,255,255,0.6);
+  --shadow: 0 6px 20px rgba(15,23,36,0.06);
+  --radius: 12px;
+  --header-height: 64px;
+  --transition: 240ms cubic-bezier(.2,.9,.25,1);
+}
+
+/* DARK */
+.dark {
+  --bg: #0b1220;
+  --panel: #0f1724;
+  --muted: #9aa4b2;
+  --text: #e6eef8;
+  --accent: #7c7aff;
+  --bubble-user: #142030;
+  --bubble-assistant: #0f1724;
+  --border: #1e293b;
+  --glass: rgba(255,255,255,0.03);
+  --shadow: 0 8px 28px rgba(2,6,23,0.6);
+}
+
+/* COFFEE */
+.coffee {
+  --bg: #f4efe8;
+  --panel: #fbf6ef;
+  --muted: #6e5746;
+  --text: #3f2f25;
+  --accent: #a86f3f;
+  --bubble-user: #f0e6da;
+  --bubble-assistant: #faf5ee;
+  --border: #e6dcca;
+  --glass: rgba(255,255,255,0.5);
+  --shadow: 0 8px 28px rgba(64,42,20,0.08);
+}
+
+/* SOLID baseline */
+* { box-sizing: border-box; font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; }
+html,body { height:100%; margin:0; background:var(--bg); color:var(--text); -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; transition: background var(--transition), color var(--transition); }
+.app { display:flex; height:100vh; gap:18px; padding:18px; align-items:stretch; }
+
+/* SIDEBAR */
+.sidebar {
+  width:320px;
+  max-width:calc(100% - 96px);
+  background:var(--panel);
+  border-radius:var(--radius);
+  box-shadow:var(--shadow);
+  border:1px solid var(--border);
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+  transform: translateX(0);
+  opacity:1;
+  transition: transform var(--transition), opacity var(--transition);
+  z-index:90;
+}
+/* collapsed for mobile only -> toggled by JS */
+.sidebar.closed {
+  transform: translateX(-16px);
+  opacity:0;
+}
+.sidebar-header { padding:18px; border-bottom:1px solid var(--border); display:flex; gap:12px; align-items:center; }
+.sidebar-header h3 { margin:0; font-size:16px; font-weight:700; }
+.pdf-select { width:100%; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:transparent; color:var(--text); font-size:14px; outline:none; }
+.upload-btn { margin-top:10px; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:transparent; cursor:pointer; font-size:13px; color:var(--muted); }
+
+/* Chat list */
+.chat-list { padding:12px 12px; overflow:auto; display:flex; flex-direction:column; gap:8px; }
+.chat-item { display:flex; justify-content:space-between; gap:10px; align-items:center; padding:10px; border-radius:10px; cursor:pointer; transition: background var(--transition), transform var(--transition); }
+.chat-item:hover { transform: translateY(-2px); }
+.chat-item .meta { display:flex; flex-direction:column; gap:4px; }
+.chat-title { font-weight:600; font-size:14px; color:var(--text); }
+.chat-snippet { font-size:13px; color:var(--muted); max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.chat-item.active { background: linear-gradient(90deg, rgba(79,70,229,0.06), rgba(79,70,229,0.02)); border:1px solid rgba(79,70,229,0.08); }
+
+/* MAIN PANEL */
+.main { flex:1; display:flex; flex-direction:column; border-radius:var(--radius); overflow:hidden; box-shadow:var(--shadow); background:linear-gradient(180deg, var(--panel), var(--panel)); border:1px solid var(--border); }
+.header { height:var(--header-height); display:flex; align-items:center; justify-content:space-between; padding:12px 18px; border-bottom:1px solid var(--border); gap:12px; }
+.header-left { display:flex; align-items:center; gap:12px; }
+.hambtn { background:transparent; border:1px solid var(--border); padding:8px 10px; border-radius:10px; cursor:pointer; display:inline-flex; gap:8px; align-items:center; }
+.doc-title { font-size:16px; font-weight:700; }
+.header-right { display:flex; align-items:center; gap:10px; }
+
+/* theme select + chat actions */
+.theme-select, .small-btn { padding:8px 10px; border-radius:10px; border:1px solid var(--border); background:transparent; cursor:pointer; color:var(--muted); }
+.small-btn { display:inline-flex; gap:8px; align-items:center; }
+
+/* CHAT BODY */
+.chat-body { flex:1; overflow:auto; padding:24px; display:flex; justify-content:center; background: linear-gradient(180deg, transparent, rgba(0,0,0,0.02)); }
+.chat-column { width:100%; max-width:880px; display:flex; flex-direction:column; gap:12px; }
+
+/* messages */
+.msg { max-width:78%; padding:12px 14px; border-radius:14px; font-size:15px; line-height:1.45; white-space:pre-wrap; box-shadow:0 1px 0 rgba(0,0,0,0.02); }
+.msg.user { align-self:flex-end; background:var(--bubble-user); border:1px solid rgba(0,0,0,0.03); border-bottom-right-radius:6px; }
+.msg.assistant { align-self:flex-start; background:var(--bubble-assistant); border:1px solid rgba(0,0,0,0.03); border-bottom-left-radius:6px; }
+
+/* typing indicator (three dots) */
+.typing {
+  align-self: flex-start;
+  background: var(--bubble-assistant);
+  padding: 12px 14px;
+  border-radius: 14px;
+  width: 64px;
+  text-align: center;
+  font-weight: 600;
+  color: var(--muted);
+}
+.typing::after {
+  content: "";
+  display:inline-block;
+  width:18px;
+  height:8px;
+  vertical-align:middle;
+  animation: dots 1s steps(3, end) infinite;
+  background: linear-gradient(90deg, rgba(0,0,0,0.06) 0 33%, rgba(0,0,0,0.16) 33% 66%, rgba(0,0,0,0.06) 66% 100%);
+  border-radius:8px;
+}
+@keyframes dots {
+  0% { transform: translateY(0); opacity:0.3; }
+  33% { transform: translateY(-3px); opacity:0.6; }
+  66% { transform: translateY(0); opacity:0.9; }
+  100% { transform: translateY(0); opacity:0.3; }
+}
+
+/* footer */
+.footer { padding:14px 18px; border-top:1px solid var(--border); display:flex; gap:10px; align-items:center; }
+.input { flex:1; padding:12px 14px; border-radius:999px; border:1px solid var(--border); background:transparent; font-size:15px; outline:none; }
+.send-btn { padding:10px 18px; border-radius:999px; background:var(--accent); color:white; border:none; cursor:pointer; }
+
+/* small screens: make sidebar overlay & closed by default */
+@media (max-width:900px){
+  .sidebar { position:fixed; left:18px; top:80px; bottom:18px; z-index:90; width:86%; max-width:420px; transform: translateX(-16px); opacity:0; }
+  .sidebar.open { transform: translateX(0); opacity:1; }
+  .app { padding:12px; }
+}
+
+/* fade animation on theme change */
+.theme-fade { animation: themeFade 320ms ease both; }
+@keyframes themeFade { from { opacity:0.0; transform: translateY(6px);} to {opacity:1; transform:none;} }
+
+/* tiny helpers */
+.kv { display:flex; gap:8px; align-items:center; }
+.small { font-size:13px; color:var(--muted); }
+.icon { font-size:16px; }
+.hidden { display:none; }
+</style>
 </head>
 <body>
-    <div class="app">
-        <div class="header">
-            <div class="logo"></div>
-            <div>
-                <div class="title">Document Chat</div>
-                <div class="small">Ask questions sourced from your uploaded PDFs</div>
-            </div>
-        </div>
-
-        <div class="controls">
-            <label class="small">PDF:</label>
-            <select id="choice"></select>
-            <div style="flex:1"></div>
-            <button class="btn secondary" id="refreshBtn">Refresh PDFs</button>
-            <button class="btn secondary" id="uploadBtn">Upload PDF</button>
-            <input id="fileInput" type="file" accept="application/pdf" style="display:none" />
-        </div>
-
-        <div class="status-banner" id="statusBanner">
-            <span class="spinner" id="statusSpinner"></span>
-            <span id="statusText">Ready.</span>
-        </div>
-
-        <div class="chat" id="chatWindow">
-            <div class="small" id="placeholder">Select a PDF, ask a question and the assistant will answer using document context.</div>
-        </div>
-
-        <div class="footer">
-            <input id="msg" type="text" placeholder="Type your question..." style="flex:1; padding:10px 12px; border-radius:10px; border:1px solid #e6e6ef" />
-            <button class="btn" id="sendBtn">Send</button>
-        </div>
+<div class="app" id="appRoot">
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar" aria-hidden="false">
+    <div class="sidebar-header">
+      <div>
+        <h3>Documents</h3>
+        <div class="small">Choose a PDF for context</div>
+      </div>
     </div>
 
-    <script>
-        function setProcessingStatus(message, state = 'working') {
-            const banner = document.getElementById('statusBanner');
-            const textEl = document.getElementById('statusText');
-            const spinner = document.getElementById('statusSpinner');
-            if (!banner || !textEl || !spinner) return;
-            textEl.textContent = message;
-            banner.classList.add('active');
-            banner.classList.remove('success', 'error');
-            spinner.classList.remove('done');
-            spinner.style.display = 'inline-block';
-            if (state === 'success') {
-                banner.classList.add('success');
-                spinner.classList.add('done');
-            } else if (state === 'error') {
-                banner.classList.add('error');
-                spinner.classList.add('done');
-            } else if (state === 'idle') {
-                spinner.style.display = 'none';
-            }
+    <div style="padding:12px;">
+      <select id="pdfSelect" class="pdf-select" aria-label="Select PDF"></select>
+      <div style="display:flex; gap:8px; margin-top:10px;">
+        <button class="upload-btn" id="uploadBtn">Upload PDF</button>
+        <input id="uploadInput" type="file" accept="application/pdf" style="display:none" />
+      </div>
+    </div>
+
+    <div style="padding:12px; border-top:1px solid var(--border);">
+      <div style="display:flex; align-items:center; justify-content:space-between;">
+        <div>
+          <div class="small">Chats</div>
+        </div>
+        <div>
+          <button class="small-btn" id="newChatBtn" title="New Chat">+ New</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="chat-list" id="chatList" role="list" aria-label="Saved chats"></div>
+  </aside>
+
+  <!-- Main panel -->
+  <main class="main" id="mainPanel">
+    <header class="header">
+      <div class="header-left">
+        <button class="hambtn" id="sidebarToggle" aria-expanded="true" title="Toggle chats (press C)">
+          <span class="icon">☰</span>
+          <span class="small">Chats</span>
+        </button>
+
+        <div style="display:flex; flex-direction:column;">
+          <div class="doc-title" id="currentChatTitle">New chat</div>
+          <div class="small" id="currentDocLabel">No PDF selected</div>
+        </div>
+      </div>
+
+      <div class="header-right">
+        <select id="themePicker" class="theme-select" aria-label="Theme">
+          <option value="system">Auto (system)</option>
+          <option value="light">Light</option>
+          <option value="dark">Dark</option>
+          <option value="coffee">Coffee</option>
+        </select>
+
+        <button class="small-btn" id="deleteBtn" title="Delete chat">Delete</button>
+      </div>
+    </header>
+
+    <div class="chat-body">
+      <div class="chat-column" id="chatWindow">
+        <div class="placeholder small" id="placeholder">Start a new conversation — choose a PDF and ask a question.</div>
+      </div>
+    </div>
+
+    <footer class="footer">
+      <input id="messageInput" class="input" placeholder="Type your question..." aria-label="Message input" />
+      <button id="sendBtn" class="send-btn">Send</button>
+    </footer>
+  </main>
+</div>
+
+<script>
+/* ------------------------------
+   Client-side logic
+   ------------------------------ */
+
+const USER_ID = "user123"; // static for now; replace with auth
+let activeChatId = localStorage.getItem("chat_id") || null;
+let currentPDF = null;
+let streamController = null;
+let isSidebarOpen = true; // desktop default true; mobile overridden below
+
+/* DOM */
+const sidebar = document.getElementById('sidebar');
+const sidebarToggle = document.getElementById('sidebarToggle');
+const chatListEl = document.getElementById('chatList');
+const newChatBtn = document.getElementById('newChatBtn');
+const uploadBtn = document.getElementById('uploadBtn');
+const uploadInput = document.getElementById('uploadInput');
+const pdfSelect = document.getElementById('pdfSelect');
+const currentChatTitleEl = document.getElementById('currentChatTitle');
+const currentDocLabel = document.getElementById('currentDocLabel');
+const chatWindow = document.getElementById('chatWindow');
+const placeholder = document.getElementById('placeholder');
+const sendBtn = document.getElementById('sendBtn');
+const messageInput = document.getElementById('messageInput');
+const deleteBtn = document.getElementById('deleteBtn');
+const themePicker = document.getElementById('themePicker');
+const appRoot = document.getElementById('appRoot');
+
+/* THEME HANDLING */
+function applyTheme(theme){
+  document.documentElement.classList.remove('dark','coffee');
+  if(theme === 'system'){
+    const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    if(dark) document.documentElement.classList.add('dark');
+    else document.documentElement.classList.remove('dark');
+  } else if(theme === 'dark'){
+    document.documentElement.classList.add('dark');
+  } else if(theme === 'coffee'){
+    document.documentElement.classList.add('coffee');
+  } else {
+    // light -> ensure none applied
+    document.documentElement.classList.remove('dark','coffee');
+  }
+  // subtle fade
+  appRoot.classList.add('theme-fade');
+  setTimeout(()=>appRoot.classList.remove('theme-fade'), 360);
+  localStorage.setItem('theme', theme);
+}
+themePicker.value = localStorage.getItem('theme') || 'system';
+applyTheme(themePicker.value);
+themePicker.onchange = ()=> applyTheme(themePicker.value);
+
+
+/* Safe escape helper */
+function escapeHtmlRaw(s) {
+  if (s === null || s === undefined) return '';
+  return String(s)
+    .replaceAll('&','&amp;')
+    .replaceAll('<','&lt;')
+    .replaceAll('>','&gt;')
+    .replaceAll('"','&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+/* Markdown -> HTML converter (basic, safe)
+   - First escapes raw HTML to avoid XSS
+   - Then applies simple markdown transforms
+   - Supports headings (#), bold (**), italic (*), underline (__), inline code (`), lists (- or *) and line breaks
+*/
+function markdownToHtml(md) {
+  if (!md && md !== 0) return '';
+  let text = String(md);
+
+  // Escape raw HTML first
+  text = escapeHtmlRaw(text);
+
+  // Convert code blocks (```): simple approach - replace triple backticks with <pre><code>
+  // Handle block code (```)
+  text = text.replace(/```([\s\S]*?)```/g, function(_, code){
+    return '<pre><code>' + code.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</code></pre>';
+  });
+
+  // Headings (### to <h3>, ## -> h2, # -> h1)
+  text = text.replace(/^### (.*)$/gm, '<h3>$1</h3>');
+  text = text.replace(/^## (.*)$/gm, '<h2>$1</h2>');
+  text = text.replace(/^# (.*)$/gm, '<h1>$1</h1>');
+
+  // Bold: **text**
+  text = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+
+  // Italic: *text* (avoid conflict with bold)
+  text = text.replace(/(^|[^*])\*(?!\*)(.*?)\*(?!\*)/g, '$1<em>$2</em>');
+
+  // Underline: __text__
+  text = text.replace(/__(.*?)__/g, '<u>$1</u>');
+
+  // Inline code: `code`
+  text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+  // Lists: lines starting with - or *
+  // Convert groups of list items into <ul>
+  text = text.replace(/(^|\n)([ \t]*[-\*] .+(?:\n[ \t]*[-\*] .+)*)/g, function(_, lead, listBlock){
+    const items = listBlock.trim().split(/\n/).map(l => l.replace(/^[\s]*[-\*]\s+/, '').trim());
+    return '\n<ul>\n' + items.map(it => '<li>' + it + '</li>').join('\n') + '\n</ul>\n';
+  });
+
+  // Convert multiple consecutive line breaks into paragraphs / <br>
+  // Replace two or more newlines with </p><p>
+  text = text.replace(/\n{2,}/g, '</p><p>');
+  // single newlines -> <br>
+  text = text.replace(/\n/g, '<br>');
+
+  // Wrap in paragraph if not already block-level
+  // If text already contains <h1|h2|h3|ul|pre|p> at start, don't wrap
+  if (!/^\s*<(h1|h2|h3|ul|pre|p)/i.test(text.trim())) {
+    text = '<p>' + text + '</p>';
+  }
+
+  return text;
+}
+
+/* GPT-style title generator (simple offline heuristics) */
+async function generateDynamicTitle(userMsg, assistantMsg) {
+  let text = assistantMsg || userMsg || "New Chat";
+
+  // Prefer assistant message if informative
+  if (assistantMsg && assistantMsg.length > 40) {
+    text = assistantMsg;
+  }
+
+  // Normalize whitespace and trim
+  text = text.replace(/\s+/g, " ").trim();
+
+  // If user asked a question, use it (without the ?)
+  if (userMsg && userMsg.includes("?")) {
+    text = userMsg.replace(/\?+$/, "").trim();
+  }
+
+  // Heuristic: extract a short segment that looks like a title
+  // Try to find a phrase before a colon, sentence end, or "—"
+  let title = text;
+  const separators = [":", "—", " - ", ". "];
+  for (const sep of separators) {
+    if (title.includes(sep)) {
+      title = title.split(sep)[0].trim();
+      break;
+    }
+  }
+
+  // If too long, cut smartly to words (max 48 chars)
+  if (title.length > 48) {
+    const words = title.split(" ");
+    let acc = "";
+    for (const w of words) {
+      if ((acc + " " + w).trim().length > 48) break;
+      acc = (acc + " " + w).trim();
+    }
+    if (acc) title = acc;
+    else title = title.slice(0, 48);
+  }
+
+  // Capitalize first letter
+  title = title.charAt(0).toUpperCase() + title.slice(1);
+
+  // Remove trailing punctuation
+  title = title.replace(/[.,:;!?]+$/, "");
+
+  // Fallback
+  if (title.length < 3) title = "New Chat";
+
+  return title;
+}
+
+/* SIDEBAR behavior: on desktop always open, mobile toggle */
+function isMobile() {
+  return window.innerWidth <= 900;
+}
+function setSidebar(open){
+  isSidebarOpen = !!open;
+  if(isMobile()){
+    // mobile: show/hide by toggling .open
+    if(isSidebarOpen){
+      sidebar.classList.add('open');
+      sidebar.classList.remove('closed');
+      sidebar.setAttribute('aria-hidden','false');
+      sidebarToggle.setAttribute('aria-expanded','true');
+    } else {
+      sidebar.classList.remove('open');
+      sidebar.classList.add('closed');
+      sidebar.setAttribute('aria-hidden','true');
+      sidebarToggle.setAttribute('aria-expanded','false');
+    }
+  } else {
+    // desktop: ensure visible, but allow closed class to hide if explicitly closed
+    if(isSidebarOpen){
+      sidebar.classList.remove('closed');
+      sidebar.classList.add('open');
+      sidebar.setAttribute('aria-hidden','false');
+      sidebarToggle.setAttribute('aria-expanded','true');
+    } else {
+      sidebar.classList.add('closed');
+      sidebar.classList.remove('open');
+      sidebar.setAttribute('aria-hidden','true');
+      sidebarToggle.setAttribute('aria-expanded','false');
+    }
+  }
+}
+/* initialize sidebar state */
+setSidebar(!isMobile()); // open on desktop, closed on mobile
+window.addEventListener('resize', ()=> { if(!isMobile()) setSidebar(true); else setSidebar(false); });
+
+sidebarToggle.onclick = ()=> setSidebar(!isSidebarOpen);
+document.addEventListener('keydown', (e)=>{
+  if(e.key.toLowerCase() === 'c' && !e.metaKey && !e.ctrlKey && !e.altKey){
+    setSidebar(!isSidebarOpen);
+  }
+});
+
+/* Close sidebar when clicking outside on mobile */
+document.addEventListener('click', (e)=>{
+  if (isMobile() && isSidebarOpen && !sidebar.contains(e.target) && !sidebarToggle.contains(e.target)) {
+    setSidebar(false);
+  }
+});
+
+/* Fetch PDF list */
+async function loadPDFs(){
+  try{
+    const res = await fetch('/api/pdf/list');
+    const data = await res.json();
+    pdfSelect.innerHTML = '';
+    if(!data.files || data.files.length === 0){
+      const opt = document.createElement('option'); opt.textContent = 'No PDFs found'; opt.value='';
+      pdfSelect.appendChild(opt);
+      currentDocLabel.textContent = 'No PDF selected';
+      currentPDF = null;
+      return;
+    }
+    data.files.forEach(f=>{
+      const opt = document.createElement('option'); opt.value = f; opt.textContent = f;
+      pdfSelect.appendChild(opt);
+    });
+    // set currentPDF if none
+    if(!currentPDF){
+      currentPDF = pdfSelect.value;
+      currentDocLabel.textContent = currentPDF || 'No PDF selected';
+    } else {
+      // keep selection if exists (if not, pick first)
+      const found = Array.from(pdfSelect.options).some(o=>o.value === currentPDF);
+      if(!found){
+        currentPDF = pdfSelect.value;
+      }
+      currentDocLabel.textContent = currentPDF || 'No PDF selected';
+    }
+  }catch(e){
+    console.error('loadPDFs', e);
+  }
+}
+loadPDFs();
+
+/* When user changes PDF selection — update header immediately */
+pdfSelect.onchange = () => {
+  currentPDF = pdfSelect.value || null;
+  currentDocLabel.textContent = currentPDF || 'No PDF selected';
+  // optional: reset chat title if no messages in current chat
+  // if you want to reset chat title whenever PDF changes, uncomment:
+  // updateHeaderTitle('New chat');
+};
+
+/* Upload PDF */
+uploadBtn.onclick = ()=> uploadInput.click();
+uploadInput.onchange = async (e)=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  const form = new FormData();
+  form.append('file', file);
+  uploadBtn.disabled = true;
+  uploadBtn.textContent = 'Uploading...';
+  try{
+    const res = await fetch('/api/upload-and-process', { method:'POST', body: form });
+    if(!res.ok) {
+      const txt = await res.text();
+      alert('Upload failed: ' + txt);
+    } else {
+      const data = await res.json();
+      // set selected pdf to uploaded file
+      await loadPDFs();
+      setTimeout(()=> {
+        currentPDF = data.filename || file.name;
+        currentDocLabel.textContent = currentPDF;
+      }, 800);
+    }
+  }catch(err){
+    console.error('upload',err);
+  } finally {
+    uploadBtn.disabled = false;
+    uploadBtn.textContent = 'Upload PDF';
+    uploadInput.value = '';
+  }
+};
+
+/* CHAT list & actions */
+async function loadChatList(){
+  try{
+    const res = await fetch('/api/chats');
+    const data = await res.json();
+    const chats = data.chats || [];
+    chatListEl.innerHTML = '';
+    chats.forEach(c=>{
+      const el = document.createElement('div');
+      el.className = 'chat-item';
+      el.dataset.chatId = c.chat_id;
+      if(activeChatId && activeChatId === c.chat_id) el.classList.add('active');
+      el.innerHTML = `<div class="meta"><div class="chat-title">${escapeHtmlRaw(c.title)}</div><div class="chat-snippet">${escapeHtmlRaw((c.last_message||'').slice(0,80))}</div></div>
+                      <div class="small">${c.ts ? new Date(c.ts*1000).toLocaleString() : ''}</div>`;
+      el.onclick = async ()=>{
+        await selectChat(c.chat_id, c.title);
+        if(isMobile()) setSidebar(false); // hide sidebar when selecting on mobile
+      };
+      chatListEl.appendChild(el);
+    });
+
+    // If no activeChatId set, choose first
+    if(!activeChatId && chats.length>0){
+      activeChatId = chats[0].chat_id;
+      localStorage.setItem('chat_id', activeChatId);
+      await loadChatHistory(activeChatId);
+      updateHeaderTitle(chats[0].title);
+    }
+
+  }catch(e){
+    console.error('loadChatList',e);
+  }
+}
+
+/* Create new chat */
+newChatBtn.onclick = async ()=>{
+  try{
+    const res = await fetch('/api/chats/new', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ title: 'New chat' })});
+    const data = await res.json();
+    activeChatId = data.chat_id;
+    localStorage.setItem('chat_id', activeChatId);
+    await loadChatList();
+    chatWindow.innerHTML = '<div class="placeholder small">New chat created. Select a PDF and ask a question.</div>';
+    updateHeaderTitle(data.title || 'New chat');
+    if(isMobile()) setSidebar(false);
+  }catch(e){ console.error('newChat', e); }
+};
+
+/* Delete chat */
+deleteBtn.onclick = async ()=>{
+  if(!activeChatId) return alert('No chat selected');
+  if(!confirm('Delete this chat? This cannot be undone.')) return;
+  try{
+    await fetch(`/api/chats/${activeChatId}`, { method: 'DELETE' });
+    localStorage.removeItem('chat_id');
+    activeChatId = null;
+    await loadChatList();
+    chatWindow.innerHTML = '<div class="placeholder small">Chat deleted. Create or select a chat.</div>';
+    updateHeaderTitle('New chat');
+  }catch(e){ console.error('delete', e); }
+};
+
+/* Select chat: load history & update header */
+async function selectChat(chatId, title){
+  activeChatId = chatId;
+  localStorage.setItem('chat_id', chatId);
+  // mark active in list
+  [...chatListEl.children].forEach(n=>n.classList.remove('active'));
+  const node = chatListEl.querySelector(`[data-chat-id="${chatId}"]`);
+  if(node) node.classList.add('active');
+  updateHeaderTitle(title || 'Chat');
+  await loadChatHistory(chatId);
+}
+
+/* Update header title */
+function updateHeaderTitle(title){
+  currentChatTitleEl.textContent = title || 'New chat';
+}
+
+/* Load chat history */
+async function loadChatHistory(chatId){
+  try{
+    const res = await fetch(`/api/chats/${chatId}`);
+    if(!res.ok) { chatWindow.innerHTML = '<div class="placeholder small">Failed to load chat.</div>'; return; }
+    const data = await res.json();
+    const history = data.history || [];
+    chatWindow.innerHTML = '';
+    if(history.length===0){
+      chatWindow.innerHTML = '<div class="placeholder small">No messages yet. Ask a question to start the conversation.</div>';
+      return;
+    }
+    for(const m of history){
+      const d = document.createElement('div');
+      d.className = 'msg ' + (m.role === 'user' ? 'user' : 'assistant');
+      // render markdown safely
+      d.innerHTML = markdownToHtml(m.message);
+      chatWindow.appendChild(d);
+    }
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+  }catch(e){ console.error('loadChatHistory', e); chatWindow.innerHTML = '<div class="placeholder small">Failed to load chat.</div>'; }
+}
+
+/* Send question (SSE streaming) */
+sendBtn.onclick = sendQuestion;
+messageInput.addEventListener('keydown', (e)=> { if(e.key==='Enter' && !e.shiftKey) sendQuestion(); });
+
+async function sendQuestion(){
+  const q = messageInput.value.trim();
+  if(!q) return;
+  if(!currentPDF){
+    alert('Please select a PDF from the sidebar.');
+    if(isMobile()) setSidebar(true);
+    else setSidebar(true);
+    return;
+  }
+  await ensureActiveChat();
+
+  // close sidebar on send (mobile-friendly)
+  if(isMobile()) setSidebar(false);
+
+  // optimistic user bubble (render markdown for user too)
+  addLocalMessage('user', q);
+
+  // If header is default New chat, set a quick provisional title from user
+  if (!currentChatTitleEl.textContent || currentChatTitleEl.textContent === "New chat") {
+    const title = await generateDynamicTitle(q, null);
+    updateHeaderTitle(title);
+    renameChatOnServer(activeChatId, title);
+  }
+
+  messageInput.value = '';
+
+  // start SSE / streaming
+  if (streamController) {
+    // abort any existing streaming (safety)
+    try { streamController.abort(); } catch(e){}
+    streamController = null;
+  }
+  streamController = new AbortController();
+  const signal = streamController.signal;
+
+  // Add a lightweight "Searching document..." bubble to indicate server-side retrieval
+  let searchingBubble = document.createElement('div');
+  searchingBubble.className = 'msg assistant';
+  searchingBubble.innerHTML = '<em>Searching document and preparing answer...</em>';
+  chatWindow.appendChild(searchingBubble);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+
+  // Add typing indicator (will be removed once streaming content begins)
+  const typingBubble = document.createElement('div');
+  typingBubble.className = 'typing';
+
+  try{
+    const res = await fetch('/chat/stream', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ chat_id: activeChatId, question: q, source: currentPDF }),
+      signal
+    });
+
+    if(!res.ok){
+      const txt = await res.text();
+      // remove searching + typing
+      if (searchingBubble) searchingBubble.remove();
+      addLocalMessage('assistant', 'Error: ' + txt);
+      return;
+    }
+
+    // remove searchingBubble and show typing while waiting for first chunk
+    if (searchingBubble) searchingBubble.remove();
+    chatWindow.appendChild(typingBubble);
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let partial = '';
+    let bubble = null;
+    let firstChunkReceived = false;
+
+    while(true){
+      const { value, done } = await reader.read();
+      if(done) break;
+      const chunk = decoder.decode(value, { stream: true });
+      // SSE style: may have newlines; parse 'data: ' lines
+      const parts = chunk.split('\n');
+      for(const p of parts){
+        if(!p) continue;
+        if(!p.startsWith('data: ')) continue;
+        const payload = p.replace('data: ','');
+        if(payload === '[END]'){
+          if(bubble) bubble.dataset.partial = 'done';
+          // remove typing if any
+          if (typingBubble) typingBubble.remove();
+          // refresh chat list to bring active chat to top
+          await loadChatList();
+          // Auto-rename using assistant's final text if this is the first assistant reply
+          const assistantCount = document.querySelectorAll('.msg.assistant').length;
+          if (assistantCount === 1) {
+            const newTitle = await generateDynamicTitle(null, partial);
+            updateHeaderTitle(newTitle);
+            // save to backend
+            renameChatOnServer(activeChatId, newTitle);
+          }
+          return;
         }
 
-        function clearProcessingStatus(delay = 0) {
-            const banner = document.getElementById('statusBanner');
-            const spinner = document.getElementById('statusSpinner');
-            if (!banner || !spinner) return;
-            const reset = () => {
-                banner.classList.remove('active', 'success', 'error');
-                spinner.classList.remove('done');
-                spinner.style.display = 'inline-block';
-            };
-            if (delay) {
-                setTimeout(reset, delay);
-            } else {
-                reset();
-            }
+        // Try JSON error detection
+        try{
+          const parsed = JSON.parse(payload);
+          if(parsed && parsed.error){
+            if (typingBubble) typingBubble.remove();
+            addLocalMessage('assistant', 'Error: ' + parsed.error);
+            return;
+          }
+        }catch(_){ /* not JSON */ }
+
+        // Append payload to partial
+        partial += payload;
+
+        // On first effective payload, remove typing indicator and create bubble
+        if(!bubble){
+          if (typingBubble) typingBubble.remove();
+          bubble = document.createElement('div');
+          bubble.className = 'msg assistant';
+          bubble.dataset.partial = '1';
+          chatWindow.appendChild(bubble);
         }
 
-        let chatInFlight = false;
-        let currentStreamController = null;
+        // Render safe markdown to HTML
+        bubble.innerHTML = markdownToHtml(partial);
+        chatWindow.scrollTop = chatWindow.scrollHeight;
+        firstChunkReceived = true;
+      }
+    }
 
-        // Helper: append message bubble
-        function appendMessage(role, text) {
-            const container = document.getElementById('chatWindow');
-            const el = document.createElement('div');
-            el.className = 'msg ' + (role === 'user' ? 'user' : 'assistant');
-            el.textContent = text;
-            // remove placeholder
-            const ph = document.getElementById('placeholder'); if (ph) ph.remove();
-            container.appendChild(el);
-            container.scrollTop = container.scrollHeight;
-        }
+    // streaming done (reader finished)
+    if (typingBubble) typingBubble.remove();
+    await loadChatList();
 
-        async function loadPDFList() {
-            try {
-                const res = await fetch('/api/pdf/list');
-                const data = await res.json();
-                const dropdown = document.getElementById('choice');
-                dropdown.innerHTML = '';
-                if (!data.files || data.files.length === 0) {
-                    dropdown.innerHTML = '<option>No PDFs found</option>';
-                    return;
-                }
-                data.files.forEach(f => { const opt = document.createElement('option'); opt.value = f; opt.textContent = f; dropdown.appendChild(opt); });
-            } catch (e) {
-                console.error('Failed to load PDFs', e);
-            }
-        }
+  }catch(err){
+    if(err.name === 'AbortError'){
+      addLocalMessage('assistant','Generation stopped.');
+    } else {
+      addLocalMessage('assistant','Connection error: ' + (err.message || err));
+    }
+  } finally {
+    streamController = null;
+    // ensure typing/searching bubbles removed
+    try { if (typingBubble) typingBubble.remove(); } catch(e){}
+    try { if (searchingBubble) searchingBubble.remove(); } catch(e){}
+    await loadChatList();
+  }
+}
 
-        document.getElementById('refreshBtn').addEventListener('click', loadPDFList);
-        document.getElementById('sendBtn').addEventListener('click', () => {
-            if (chatInFlight) {
-                cancelActiveStream();
-            } else {
-                sendQuestion();
-            }
-        });
-        document.getElementById('uploadBtn').addEventListener('click', () => document.getElementById('fileInput').click());
-        document.getElementById('fileInput').addEventListener('change', (e) => { const f = e.target.files[0]; if (f) uploadPdf(f); });
-        document.getElementById('msg').addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                if (!chatInFlight) {
-                    sendQuestion();
-                }
-            }
-        });
+/* Rename on server helper (used by auto-title) */
+async function renameChatOnServer(chatId, newTitle) {
+  if(!chatId) return;
+  try {
+    await fetch(`/api/chats/${chatId}/rename`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: newTitle })
+    });
+    await loadChatList();
+  } catch (e) {
+    console.error("Could not rename chat:", e);
+  }
+}
 
-        function setSendButtonMode(mode) {
-            const sendBtn = document.getElementById('sendBtn');
-            if (!sendBtn) return;
-            if (mode === 'stop') {
-                sendBtn.textContent = 'Stop';
-                sendBtn.classList.add('danger');
-            } else {
-                sendBtn.textContent = 'Send';
-                sendBtn.classList.remove('danger');
-            }
-        }
+/* Helper to ensure we have an active chat (creates if missing) */
+async function ensureActiveChat(){
+  if(activeChatId) return;
+  try{
+    const res = await fetch('/api/chats/new', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ title:'Quick Chat' })});
+    const data = await res.json();
+    activeChatId = data.chat_id;
+    localStorage.setItem('chat_id', activeChatId);
+    await loadChatList();
+    updateHeaderTitle(data.title || 'Chat');
+  }catch(e){ console.error('ensureActiveChat', e); }
+}
 
-        function cancelActiveStream() {
-            if (currentStreamController) {
-                currentStreamController.abort();
-            }
-        }
+/* Add a message locally (optimistic UI) */
+function addLocalMessage(role, text){
+  if(document.getElementById('placeholder')) {
+    const ph = document.getElementById('placeholder');
+    ph.remove();
+  }
+  const d = document.createElement('div');
+  d.className = 'msg ' + (role === 'user' ? 'user' : 'assistant');
+  d.innerHTML = markdownToHtml(text);
+  chatWindow.appendChild(d);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+}
 
-        async function sendQuestion() {
-            const questionEl = document.getElementById('msg');
-            const sendBtn = document.getElementById('sendBtn');
-            if (chatInFlight) {
-                return;
-            }
-            const question = questionEl.value.trim();
-            const source = document.getElementById('choice').value;
-            if (!question) return;
-            chatInFlight = true;
-            setSendButtonMode('stop');
-            appendMessage('user', question);
-            questionEl.value = '';
+/* Utility escape */
+function escapeHtml(s){
+  if(!s) return '';
+  return s.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
+}
 
-            // SSE stream
-            try {
-                const controller = new AbortController();
-                currentStreamController = controller;
-                const res = await fetch('/chat/stream', {
-                    method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ question, source }),
-                    signal: controller.signal
-                });
+/* Initial load */
+(async()=>{
+  await loadPDFs();
+  await loadChatList();
+  // select active chat if any
+  if(activeChatId){
+    try{
+      await loadChatHistory(activeChatId);
+      // fetch title from chat list and set
+      const res = await fetch('/api/chats');
+      const data = await res.json();
+      const found = (data.chats || []).find(c=>c.chat_id===activeChatId);
+      if(found) updateHeaderTitle(found.title);
+    }catch(e){ console.error('init load', e); }
+  }
+})();
 
-                if (!res.ok) {
-                    appendMessage('assistant', 'Error: ' + (await res.text()));
-                    return;
-                }
-                sendBtn.textContent = 'Stop';
-
-                const reader = res.body.getReader();
-                const decoder = new TextDecoder();
-                let acc = '';
-                let partialBubble = null;
-                while (true) {
-                    const { value, done } = await reader.read();
-                    if (done) break;
-                    const chunk = decoder.decode(value);
-                    // SSE may contain 'data: ' prefixed lines; split and process
-                    const parts = chunk.split('\n');
-                    for (let p of parts) {
-                        if (!p) continue;
-                        if (p.startsWith('data: ')) {
-                            const payload = p.replace('data: ', '');
-                            if (payload === '[END]') {
-                                if (acc) {
-                                    if (partialBubble) {
-                                        partialBubble.textContent = acc;
-                                        delete partialBubble.dataset.partial;
-                                    } else {
-                                        appendMessage('assistant', acc);
-                                    }
-                                    acc = '';
-                                }
-                                return;
-                            }
-                            try { const parsed = JSON.parse(payload); if (parsed.error) { appendMessage('assistant', 'Error: '+parsed.error); return; } }
-                            catch(e) { /* not JSON */ }
-                            // stream tokens: accumulate and show progressively
-                            acc += payload;
-                            // show progressive partials as assistant bubble
-                            // remove previous partial bubble if present
-                            const last = document.querySelector('#chatWindow .msg.assistant:last-child');
-                            if (last && last.dataset.partial === '1') {
-                                last.textContent = acc;
-                                partialBubble = last;
-                            } else {
-                                const el = document.createElement('div');
-                                el.className='msg assistant';
-                                el.dataset.partial='1';
-                                el.textContent = acc;
-                                document.getElementById('chatWindow').appendChild(el);
-                                partialBubble = el;
-                            }
-                        }
-                    }
-                }
-                // finalize
-                if (partialBubble) {
-                    delete partialBubble.dataset.partial;
-                }
-
-            } catch (err) {
-                if (err.name === 'AbortError') {
-                    appendMessage('assistant', 'Generation stopped.');
-                } else {
-                    appendMessage('assistant', 'Connection error: ' + err.message);
-                }
-            } finally {
-                chatInFlight = false;
-                currentStreamController = null;
-                setSendButtonMode('send');
-                const partial = document.querySelector('#chatWindow .msg.assistant:last-child');
-                if (partial && partial.dataset.partial === '1') {
-                    delete partial.dataset.partial;
-                }
-                questionEl.focus();
-            }
-        }
-
-        // Initial load
-        loadPDFList();
-    
-        // Upload PDF
-        async function uploadPdf(file) {
-            const uploadBtn = document.getElementById('uploadBtn');
-            uploadBtn.disabled = true;
-            uploadBtn.textContent = 'Uploading...';
-            setProcessingStatus(`Uploading ${file.name}...`, 'working');
-
-            const form = new FormData();
-            form.append('file', file, file.name);
-
-            try {
-                const res = await fetch('/api/upload-and-process', {
-                    method: 'POST',
-                    body: form
-                });
-
-                if (!res.ok) {
-                    const text = await res.text();
-                    appendMessage('assistant', 'Upload failed: ' + text);
-                    setProcessingStatus('Upload failed. Please try again.', 'error');
-                    clearProcessingStatus(6000);
-                } else {
-                    const data = await res.json();
-                    const docId = data.id;
-                    appendMessage('assistant', `Uploaded ${data.filename || file.name}. Processing started (id ${docId}).`);
-                    setProcessingStatus(`Processing ${data.filename || file.name}. This may take a minute...`, 'working');
-                    // Refresh list after short delay to allow persistence
-                    setTimeout(loadPDFList, 1200);
-                    // Start polling for processing completion
-                    pollDocumentStatus(docId, 5*60*1000, data.filename || file.name);
-                }
-            } catch (err) {
-                appendMessage('assistant', 'Upload error: ' + err.message);
-                setProcessingStatus('Upload error. Please try again.', 'error');
-                clearProcessingStatus(6000);
-            } finally {
-                uploadBtn.disabled = false;
-                uploadBtn.textContent = 'Upload PDF';
-                // clear file input
-                try { document.getElementById('fileInput').value = ''; } catch (_) {}
-            }
-
-            // Poll document status until done or failed, then notify user
-            async function pollDocumentStatus(docId, timeoutMs=5*60*1000, label='document') {
-                const start = Date.now();
-                const interval = 2000;
-                const check = async () => {
-                    try {
-                        const res = await fetch(`/api/documents/${docId}`);
-                        if (!res.ok) {
-                            if (res.status === 404) { appendMessage('assistant', 'Document not found (it may have been removed).'); return; }
-                            return;
-                        }
-                        const doc = await res.json();
-                        if (doc.status === 'completed') {
-                            appendMessage('assistant', `Processing completed for ${doc.filename}.`);
-                            setProcessingStatus(`Processing completed for ${doc.filename}.`, 'success');
-                            clearProcessingStatus(4000);
-                            loadPDFList();
-                            return;
-                        }
-                        if (doc.status === 'failed') {
-                            appendMessage('assistant', `Processing failed for ${doc.filename}: ${doc.error_message || 'unknown error'}`);
-                            setProcessingStatus(`Processing failed for ${doc.filename}.`, 'error');
-                            clearProcessingStatus(6000);
-                            loadPDFList();
-                            return;
-                        }
-                    } catch (e) {
-                        console.error('poll error', e);
-                    }
-                    if (Date.now() - start > timeoutMs) {
-                        appendMessage('assistant', 'Processing is still running in the background. Large PDFs can take a few minutes—try Refresh PDFs in a bit or continue working while it finishes.');
-                        setProcessingStatus(`Processing is still running for ${label}. Feel free to continue working and refresh later.`, 'working');
-                        return;
-                    }
-                    setTimeout(check, interval);
-                };
-                setTimeout(check, interval);
-            }
-        }
-    </script>
+</script>
 </body>
 </html>
