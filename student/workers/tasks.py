@@ -2,11 +2,16 @@ from student.core.celerey_app import celery_app
 from sqlalchemy.orm import sessionmaker
 from student.core.database import engine, Document
 
-# Import chromadb compat and chromadb here so worker processes initialize the
-# vector DB client in their own process (don't reuse a Collection object
-# created by the FastAPI process which may be missing internal client state).
+# Ensure each worker process initializes its own Chroma client state.
 import student.core.chromadb_compat
-import chromadb
+from student.doc_summarizer.services.chunking import text_splitter
+from student.doc_summarizer.services.embeddings import get_embed
+from student.doc_summarizer.services.text_extraction import extract_text, detect_language
+from student.doc_summarizer.services.vector_store import (
+    get_chroma_client,
+    get_documents_collection,
+)
+
 
 @celery_app.task(bind=True, max_retries=3)
 def process_document_task(self, doc_id: int, file_path: str, content_type: str):
@@ -16,9 +21,6 @@ def process_document_task(self, doc_id: int, file_path: str, content_type: str):
     sharing a Collection instance across processes (which can lack
     internal `_client` state).
     """
-    # Import text-processing helpers inside the task to avoid circular imports
-    from student.doc_summarizer.endpoint import extract_text, detect_language, text_splitter, get_embed
-
     SessionLocal = sessionmaker(bind=engine)
     db = SessionLocal()
 
@@ -38,6 +40,9 @@ def process_document_task(self, doc_id: int, file_path: str, content_type: str):
 
         chunks = text_splitter.split_text(text)
         if not chunks:
+            # Provide more debug info for failures so we can see why splitting failed
+            sample = (text or "")[:200]
+            print(f"[Celery] No chunks for doc {doc.id}. extracted_text_len={len(text or '')} sample={sample!r}")
             raise ValueError("No text chunks generated from document")
 
         embeddings = get_embed().embed_documents(chunks)
@@ -50,19 +55,10 @@ def process_document_task(self, doc_id: int, file_path: str, content_type: str):
             "chunk_index": i
         } for i in range(len(chunks))]
 
-        # Create a local ChromaDB client/collection inside the worker process
-        CHROMA_DB_DIR = "student/chroma_store"
-        chroma_client = chromadb.Client(chromadb.config.Settings(
-            chroma_db_impl="duckdb+parquet",
-            persist_directory=CHROMA_DB_DIR
-        ))
-        collection = chroma_client.get_or_create_collection(
-            name="documents",
-            metadata={"hnsw:space": "cosine"}
-        )
+        chroma_client = get_chroma_client()
+        collection = get_documents_collection()
 
-        # Use the client's internal _add to avoid relying on a Collection
-        # object's private `_client` attribute (compatibility across processes).
+        # Insert embeddings via the shared client to ensure persistence across processes.
         chroma_client._add(
             ids,
             collection.id,

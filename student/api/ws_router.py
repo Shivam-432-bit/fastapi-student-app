@@ -7,13 +7,18 @@ import os
 # Import chromadb compatibility patch before chromadb
 import student.core.chromadb_compat
 import chromadb
-# Restore app env vars after chromadb import (same pattern as other modules)
 student.core.chromadb_compat.restore_env()
+
+# ---- NEW IMPORTS FOR MEMORY ----
+from student.utils.chat_memory_impl import save_message, get_history
+from student.core.chroma_memory import add_memory, search_memory
+from student.doc_summarizer.services.embeddings import get_embed
+# --------------------------------
 
 router = APIRouter()
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
-MODEL_NAME = "llama3.1:8b"
+MODEL_NAME = "llama3.2"
 
 # --------------------------------------------------------
 #               VECTOR DB INIT (for context queries)
@@ -43,20 +48,10 @@ except Exception as _exc:
 #         HELPER: Get context for the selected file
 # --------------------------------------------------------
 def get_context_for_file(filename: str) -> str:
-    """
-    Fetch context from your vector DB based on metadata 'source'.
-    """
-    # If Chroma isn't available, return empty context so the LLM still runs
     if collection is None or chroma_client is None:
         return ""
 
-    # Import embedding helper lazily to avoid circular imports at module import time
     try:
-        from student.doc_summarizer.endpoint import get_embed
-
-        # Create a query embedding for the filename so we can retrieve relevant
-        # chunks for that document. This mirrors the logic used in the doc
-        # summarizer module.
         query_embed = get_embed().embed_query(filename)
 
         try:
@@ -80,8 +75,7 @@ def get_context_for_file(filename: str) -> str:
         return "\n\n".join(docs)
 
     except Exception as exc:
-        # On failure, don't raise — return an empty context and log the error.
-        print(f"[ws_router] Failed to load context for {filename}: {exc}")
+        print(f"[ws_router] Failed to load context: {exc}")
         return ""
 
 
@@ -124,6 +118,11 @@ async def stream_ollama(prompt: str):
 @router.websocket("/ws/chat")
 async def websocket_chat(websocket: WebSocket):
     await websocket.accept()
+
+    # ---- STATIC USER FOR NOW (replace with auth later) ----
+    user_id = "user123"
+    # --------------------------------------------------------
+
     try:
         while True:
             message = await websocket.receive_text()
@@ -139,25 +138,59 @@ async def websocket_chat(websocket: WebSocket):
                 await websocket.send_text(json.dumps({"error": "missing source"}))
                 continue
 
-            # Load context based on filename
+            # ---- 1. SAVE USER QUESTION TO REDIS ----
+            save_message(user_id, "user", question)
+
+            # ---- 2. LOAD CHAT HISTORY ----
+            history = get_history(user_id)[-10:]  # last 10
+            history_text = ""
+            for h in history:
+                history_text += f"{h['role']}: {h['message']}\n"
+
+            # ---- 3. LOAD SEMANTIC MEMORY ----
+            semantic = search_memory(user_id, question)
+            semantic_text = "\n".join(semantic) if semantic else ""
+
+            # ---- 4. LOAD PDF CONTEXT ----
             context = get_context_for_file(source)
 
+            # ---- 5. FINAL PROMPT ----
             prompt = f"""
-You are a helpful assistant. Answer only using this context:
+You are a document-grounded assistant. Follow these rules strictly:
+1. Only answer questions about the PDF named "{source}" using the provided context.
+2. If the user asks for anything unrelated (for example, creating random questions, switching topics, or ignoring the PDF), politely respond: "I can only answer questions about {source}. Please ask something about that document."
+3. If the context does not contain an answer, say you cannot find relevant information in the document.
 
+CONTEXT:
 {context}
 
-User question:
+CHAT HISTORY:
+{history_text}
+
+SEMANTIC MEMORY:
+{semantic_text}
+
+USER QUESTION:
 {question}
 
-Answer:
+FINAL ANSWER:
 """
+
+            reply_text = ""  # to accumulate final assistant response
 
             try:
                 async for token in stream_ollama(prompt):
+                    reply_text += token
                     await websocket.send_text(token)
             except Exception as exc:
                 await websocket.send_text(json.dumps({"error": str(exc)}))
+
+            # ---- 6. SAVE ASSISTANT REPLY TO REDIS ----
+            save_message(user_id, "assistant", reply_text)
+
+            # ---- 7. SAVE QUESTION TO LONG-TERM MEMORY ----
+            if len(question.split()) > 4:  # ignore tiny questions
+                add_memory(user_id, question)
 
             await websocket.send_text("[END]")
 
@@ -170,7 +203,7 @@ Answer:
 # --------------------------------------------------------
 @router.post("/chat/stream")
 async def http_chat(request: Request):
-    """Streams tokens using Server-Sent Events (SSE)."""
+
     try:
         body = await request.json()
     except:
@@ -184,26 +217,53 @@ async def http_chat(request: Request):
     if not source:
         return JSONResponse({"error": "missing source"}, status_code=400)
 
-    # Load context for selected PDF
+    # STATIC USER
+    user_id = "user123"
+
+    save_message(user_id, "user", question)
+
+    history = get_history(user_id)[-10:]
+    history_text = "\n".join([f"{h['role']}: {h['message']}" for h in history])
+
+    semantic = search_memory(user_id, question)
+    semantic_text = "\n".join(semantic) if semantic else ""
+
     context = get_context_for_file(source)
 
     prompt = f"""
-You are a helpful assistant. Answer only using this context:
+You are a document-grounded assistant. Follow these rules strictly:
+1. Only answer questions about the PDF named "{source}" using the provided context.
+2. If the user asks for anything unrelated (for example, creating random questions, switching topics, or ignoring the PDF), politely respond: "I can only answer questions about {source}. Please ask something about that document."
+3. If the context does not contain an answer, say you cannot find relevant information in the document.
 
+CONTEXT:
 {context}
 
-User question:
+CHAT HISTORY:
+{history_text}
+
+SEMANTIC MEMORY:
+{semantic_text}
+
+USER QUESTION:
 {question}
 
-Answer:
+FINAL ANSWER:
 """
 
     async def event_generator():
+        reply_text = ""
         try:
             async for token in stream_ollama(prompt):
+                reply_text += token
                 yield f"data: {token}\n\n"
         except Exception as exc:
             yield f"data: {json.dumps({'error': str(exc)})}\n\n"
+
+        save_message(user_id, "assistant", reply_text)
+
+        if len(question.split()) > 4:
+            add_memory(user_id, question)
 
         yield "data: [END]\n\n"
 

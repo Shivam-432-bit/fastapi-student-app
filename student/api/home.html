@@ -1,87 +1,361 @@
 <!DOCTYPE html>
 <html>
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Document Chat</title>
+    <style>
+        body { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Arial; background:#f6f7fb; margin:0; padding:0; display:flex; align-items:center; justify-content:center; height:100vh }
+        .app { width:720px; max-width:96%; background:white; box-shadow:0 6px 20px rgba(0,0,0,.08); border-radius:12px; overflow:hidden }
+        .header { padding:16px 20px; border-bottom:1px solid #eee; display:flex; gap:12px; align-items:center }
+        .logo { width:44px; height:44px; background:linear-gradient(135deg,#6c5ce7,#00b894); border-radius:8px }
+        .title { font-weight:600 }
+        .controls { padding:12px 20px; display:flex; gap:8px; align-items:center; border-bottom:1px solid #f0f0f3 }
+        select, input[type="text"] { padding:8px 10px; border-radius:8px; border:1px solid #e6e6ef }
+        .status-banner { display:none; align-items:center; gap:10px; padding:10px 20px; border-bottom:1px solid #f0f0f3; background:#fbfbff; font-size:13px; color:#555 }
+        .status-banner.active { display:flex }
+        .status-banner.success { color:#1d8242 }
+        .status-banner.error { color:#c0392b }
+        .spinner { width:14px; height:14px; border-radius:50%; border:2px solid rgba(108,92,231,.3); border-top-color:#6c5ce7; animation:spin .9s linear infinite }
+        .spinner.done { border-color:currentColor; border-top-color:currentColor; animation:none }
+        .status-banner.success .spinner { color:#1d8242 }
+        .status-banner.error .spinner { color:#c0392b }
+        @keyframes spin { to { transform:rotate(360deg); } }
+        .chat { height:420px; overflow:auto; padding:18px; display:flex; flex-direction:column; gap:12px; background:linear-gradient(180deg,#fff,#fafbff) }
+        .msg { max-width:78%; padding:12px 14px; border-radius:14px; line-height:1.4 }
+        .msg.user { background:#e6f7ff; align-self:flex-end; border-bottom-right-radius:4px }
+        .msg.assistant { background:#f1f3ff; align-self:flex-start; border-bottom-left-radius:4px }
+        .footer { padding:12px 16px; display:flex; gap:8px; align-items:center; border-top:1px solid #eee }
+        .btn { background:#6c5ce7; color:white; padding:8px 12px; border-radius:10px; border:none; cursor:pointer }
+        .btn.danger { background:#ff6b6b }
+        .btn.secondary { background:#eee; color:#333 }
+        .small { font-size:13px; color:#666 }
+    </style>
+</head>
 <body>
-    <h2>Ask Questions from Your Documents</h2>
+    <div class="app">
+        <div class="header">
+            <div class="logo"></div>
+            <div>
+                <div class="title">Document Chat</div>
+                <div class="small">Ask questions sourced from your uploaded PDFs</div>
+            </div>
+        </div>
 
-    <!-- Dropdown will auto-load PDF names -->
-    <label>Select PDF:</label>
-    <select id="choice"></select>
+        <div class="controls">
+            <label class="small">PDF:</label>
+            <select id="choice"></select>
+            <div style="flex:1"></div>
+            <button class="btn secondary" id="refreshBtn">Refresh PDFs</button>
+            <button class="btn secondary" id="uploadBtn">Upload PDF</button>
+            <input id="fileInput" type="file" accept="application/pdf" style="display:none" />
+        </div>
 
-    <br><br>
+        <div class="status-banner" id="statusBanner">
+            <span class="spinner" id="statusSpinner"></span>
+            <span id="statusText">Ready.</span>
+        </div>
 
-    <input id="msg" placeholder="Ask something...">
-    <button onclick="sendQuestion()">Ask</button>
+        <div class="chat" id="chatWindow">
+            <div class="small" id="placeholder">Select a PDF, ask a question and the assistant will answer using document context.</div>
+        </div>
 
-    <h3>Response:</h3>
-    <div id="output" style="white-space: pre-wrap;"></div>
+        <div class="footer">
+            <input id="msg" type="text" placeholder="Type your question..." style="flex:1; padding:10px 12px; border-radius:10px; border:1px solid #e6e6ef" />
+            <button class="btn" id="sendBtn">Send</button>
+        </div>
+    </div>
 
-<script>
-// -----------------------------------------------------
-// Load dropdown automatically from FastAPI
-// -----------------------------------------------------
-async function loadPDFList() {
-    const res = await fetch("/api/pdf/list");
-    const data = await res.json();
-
-    const dropdown = document.getElementById("choice");
-    dropdown.innerHTML = "";
-
-    if (!data.files || data.files.length === 0) {
-        dropdown.innerHTML = "<option>No PDFs found</option>";
-        return;
-    }
-
-    data.files.forEach(file => {
-        const opt = document.createElement("option");
-        opt.value = file;
-        opt.textContent = file;
-        dropdown.appendChild(opt);
-    });
-}
-
-loadPDFList();
-
-
-// -----------------------------------------------------
-// Send question → SSE stream from FastAPI
-// -----------------------------------------------------
-async function sendQuestion() {
-    const question = document.getElementById("msg").value;
-    const source = document.getElementById("choice").value;
-
-    if (!question.trim()) {
-        alert("Enter a question");
-        return;
-    }
-
-    document.getElementById("output").innerHTML = "";
-
-    const response = await fetch("/chat/stream", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({ question, source })
-    });
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-
-    while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value);
-        const lines = chunk.split("\n");
-
-        for (let line of lines) {
-            if (line.startsWith("data: ")) {
-                const text = line.replace("data: ", "");
-                if (text === "[END]") return;
-                document.getElementById("output").innerHTML += text;
+    <script>
+        function setProcessingStatus(message, state = 'working') {
+            const banner = document.getElementById('statusBanner');
+            const textEl = document.getElementById('statusText');
+            const spinner = document.getElementById('statusSpinner');
+            if (!banner || !textEl || !spinner) return;
+            textEl.textContent = message;
+            banner.classList.add('active');
+            banner.classList.remove('success', 'error');
+            spinner.classList.remove('done');
+            spinner.style.display = 'inline-block';
+            if (state === 'success') {
+                banner.classList.add('success');
+                spinner.classList.add('done');
+            } else if (state === 'error') {
+                banner.classList.add('error');
+                spinner.classList.add('done');
+            } else if (state === 'idle') {
+                spinner.style.display = 'none';
             }
         }
-    }
-}
-</script>
 
+        function clearProcessingStatus(delay = 0) {
+            const banner = document.getElementById('statusBanner');
+            const spinner = document.getElementById('statusSpinner');
+            if (!banner || !spinner) return;
+            const reset = () => {
+                banner.classList.remove('active', 'success', 'error');
+                spinner.classList.remove('done');
+                spinner.style.display = 'inline-block';
+            };
+            if (delay) {
+                setTimeout(reset, delay);
+            } else {
+                reset();
+            }
+        }
+
+        let chatInFlight = false;
+        let currentStreamController = null;
+
+        // Helper: append message bubble
+        function appendMessage(role, text) {
+            const container = document.getElementById('chatWindow');
+            const el = document.createElement('div');
+            el.className = 'msg ' + (role === 'user' ? 'user' : 'assistant');
+            el.textContent = text;
+            // remove placeholder
+            const ph = document.getElementById('placeholder'); if (ph) ph.remove();
+            container.appendChild(el);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        async function loadPDFList() {
+            try {
+                const res = await fetch('/api/pdf/list');
+                const data = await res.json();
+                const dropdown = document.getElementById('choice');
+                dropdown.innerHTML = '';
+                if (!data.files || data.files.length === 0) {
+                    dropdown.innerHTML = '<option>No PDFs found</option>';
+                    return;
+                }
+                data.files.forEach(f => { const opt = document.createElement('option'); opt.value = f; opt.textContent = f; dropdown.appendChild(opt); });
+            } catch (e) {
+                console.error('Failed to load PDFs', e);
+            }
+        }
+
+        document.getElementById('refreshBtn').addEventListener('click', loadPDFList);
+        document.getElementById('sendBtn').addEventListener('click', () => {
+            if (chatInFlight) {
+                cancelActiveStream();
+            } else {
+                sendQuestion();
+            }
+        });
+        document.getElementById('uploadBtn').addEventListener('click', () => document.getElementById('fileInput').click());
+        document.getElementById('fileInput').addEventListener('change', (e) => { const f = e.target.files[0]; if (f) uploadPdf(f); });
+        document.getElementById('msg').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                if (!chatInFlight) {
+                    sendQuestion();
+                }
+            }
+        });
+
+        function setSendButtonMode(mode) {
+            const sendBtn = document.getElementById('sendBtn');
+            if (!sendBtn) return;
+            if (mode === 'stop') {
+                sendBtn.textContent = 'Stop';
+                sendBtn.classList.add('danger');
+            } else {
+                sendBtn.textContent = 'Send';
+                sendBtn.classList.remove('danger');
+            }
+        }
+
+        function cancelActiveStream() {
+            if (currentStreamController) {
+                currentStreamController.abort();
+            }
+        }
+
+        async function sendQuestion() {
+            const questionEl = document.getElementById('msg');
+            const sendBtn = document.getElementById('sendBtn');
+            if (chatInFlight) {
+                return;
+            }
+            const question = questionEl.value.trim();
+            const source = document.getElementById('choice').value;
+            if (!question) return;
+            chatInFlight = true;
+            setSendButtonMode('stop');
+            appendMessage('user', question);
+            questionEl.value = '';
+
+            // SSE stream
+            try {
+                const controller = new AbortController();
+                currentStreamController = controller;
+                const res = await fetch('/chat/stream', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ question, source }),
+                    signal: controller.signal
+                });
+
+                if (!res.ok) {
+                    appendMessage('assistant', 'Error: ' + (await res.text()));
+                    return;
+                }
+                sendBtn.textContent = 'Stop';
+
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+                let acc = '';
+                let partialBubble = null;
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    const chunk = decoder.decode(value);
+                    // SSE may contain 'data: ' prefixed lines; split and process
+                    const parts = chunk.split('\n');
+                    for (let p of parts) {
+                        if (!p) continue;
+                        if (p.startsWith('data: ')) {
+                            const payload = p.replace('data: ', '');
+                            if (payload === '[END]') {
+                                if (acc) {
+                                    if (partialBubble) {
+                                        partialBubble.textContent = acc;
+                                        delete partialBubble.dataset.partial;
+                                    } else {
+                                        appendMessage('assistant', acc);
+                                    }
+                                    acc = '';
+                                }
+                                return;
+                            }
+                            try { const parsed = JSON.parse(payload); if (parsed.error) { appendMessage('assistant', 'Error: '+parsed.error); return; } }
+                            catch(e) { /* not JSON */ }
+                            // stream tokens: accumulate and show progressively
+                            acc += payload;
+                            // show progressive partials as assistant bubble
+                            // remove previous partial bubble if present
+                            const last = document.querySelector('#chatWindow .msg.assistant:last-child');
+                            if (last && last.dataset.partial === '1') {
+                                last.textContent = acc;
+                                partialBubble = last;
+                            } else {
+                                const el = document.createElement('div');
+                                el.className='msg assistant';
+                                el.dataset.partial='1';
+                                el.textContent = acc;
+                                document.getElementById('chatWindow').appendChild(el);
+                                partialBubble = el;
+                            }
+                        }
+                    }
+                }
+                // finalize
+                if (partialBubble) {
+                    delete partialBubble.dataset.partial;
+                }
+
+            } catch (err) {
+                if (err.name === 'AbortError') {
+                    appendMessage('assistant', 'Generation stopped.');
+                } else {
+                    appendMessage('assistant', 'Connection error: ' + err.message);
+                }
+            } finally {
+                chatInFlight = false;
+                currentStreamController = null;
+                setSendButtonMode('send');
+                const partial = document.querySelector('#chatWindow .msg.assistant:last-child');
+                if (partial && partial.dataset.partial === '1') {
+                    delete partial.dataset.partial;
+                }
+                questionEl.focus();
+            }
+        }
+
+        // Initial load
+        loadPDFList();
+    
+        // Upload PDF
+        async function uploadPdf(file) {
+            const uploadBtn = document.getElementById('uploadBtn');
+            uploadBtn.disabled = true;
+            uploadBtn.textContent = 'Uploading...';
+            setProcessingStatus(`Uploading ${file.name}...`, 'working');
+
+            const form = new FormData();
+            form.append('file', file, file.name);
+
+            try {
+                const res = await fetch('/api/upload-and-process', {
+                    method: 'POST',
+                    body: form
+                });
+
+                if (!res.ok) {
+                    const text = await res.text();
+                    appendMessage('assistant', 'Upload failed: ' + text);
+                    setProcessingStatus('Upload failed. Please try again.', 'error');
+                    clearProcessingStatus(6000);
+                } else {
+                    const data = await res.json();
+                    const docId = data.id;
+                    appendMessage('assistant', `Uploaded ${data.filename || file.name}. Processing started (id ${docId}).`);
+                    setProcessingStatus(`Processing ${data.filename || file.name}. This may take a minute...`, 'working');
+                    // Refresh list after short delay to allow persistence
+                    setTimeout(loadPDFList, 1200);
+                    // Start polling for processing completion
+                    pollDocumentStatus(docId, 5*60*1000, data.filename || file.name);
+                }
+            } catch (err) {
+                appendMessage('assistant', 'Upload error: ' + err.message);
+                setProcessingStatus('Upload error. Please try again.', 'error');
+                clearProcessingStatus(6000);
+            } finally {
+                uploadBtn.disabled = false;
+                uploadBtn.textContent = 'Upload PDF';
+                // clear file input
+                try { document.getElementById('fileInput').value = ''; } catch (_) {}
+            }
+
+            // Poll document status until done or failed, then notify user
+            async function pollDocumentStatus(docId, timeoutMs=5*60*1000, label='document') {
+                const start = Date.now();
+                const interval = 2000;
+                const check = async () => {
+                    try {
+                        const res = await fetch(`/api/documents/${docId}`);
+                        if (!res.ok) {
+                            if (res.status === 404) { appendMessage('assistant', 'Document not found (it may have been removed).'); return; }
+                            return;
+                        }
+                        const doc = await res.json();
+                        if (doc.status === 'completed') {
+                            appendMessage('assistant', `Processing completed for ${doc.filename}.`);
+                            setProcessingStatus(`Processing completed for ${doc.filename}.`, 'success');
+                            clearProcessingStatus(4000);
+                            loadPDFList();
+                            return;
+                        }
+                        if (doc.status === 'failed') {
+                            appendMessage('assistant', `Processing failed for ${doc.filename}: ${doc.error_message || 'unknown error'}`);
+                            setProcessingStatus(`Processing failed for ${doc.filename}.`, 'error');
+                            clearProcessingStatus(6000);
+                            loadPDFList();
+                            return;
+                        }
+                    } catch (e) {
+                        console.error('poll error', e);
+                    }
+                    if (Date.now() - start > timeoutMs) {
+                        appendMessage('assistant', 'Processing is still running in the background. Large PDFs can take a few minutes—try Refresh PDFs in a bit or continue working while it finishes.');
+                        setProcessingStatus(`Processing is still running for ${label}. Feel free to continue working and refresh later.`, 'working');
+                        return;
+                    }
+                    setTimeout(check, interval);
+                };
+                setTimeout(check, interval);
+            }
+        }
+    </script>
 </body>
 </html>
