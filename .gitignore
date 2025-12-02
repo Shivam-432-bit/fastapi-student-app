@@ -1,12 +1,13 @@
 # Python
-.venv
-.venv310
-__pycache__
+.venv/
+.venv310/
+__pycache__/
 *.pyc
 *.pyo
 *.pyd
 .Python
 *.so
+.pytest_cache/
 
 # Environment
 .env
@@ -23,9 +24,10 @@ nohup.out
 # macOS
 .DS_Store
 
-# Uploads and data
+# Data (regenerated at runtime)
 uploads/
 student/chroma_store/
+dump.rdb
 
 # IDE
 .vscode/
