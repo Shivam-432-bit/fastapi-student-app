@@ -2,7 +2,7 @@
 
 A comprehensive FastAPI application with student management, PDF document Q&A using LLM, JWT authentication, and real-time chat capabilities.
 
-## 🚀 Features
+##  Features
 
 - **Student Management**: Full CRUD operations with role-based access control
 - **PDF Document Q&A**: Upload PDFs and ask questions using Ollama LLM
@@ -11,7 +11,7 @@ A comprehensive FastAPI application with student management, PDF document Q&A us
 - **Bulk Operations**: CSV/Excel upload for batch student creation
 - **Vector Search**: ChromaDB-powered semantic document search
 
-## 📁 Project Structure
+##  Project Structure
 
 ```
 FastAPI/
@@ -44,7 +44,7 @@ FastAPI/
 └── .vscode/tasks.json       # VS Code run tasks
 ```
 
-## 🛠️ Installation
+##  Installation
 
 ### Prerequisites
 - Python 3.11+
@@ -96,7 +96,7 @@ uvicorn student.api.main:app --reload --host 0.0.0.0 --port 8000
 
 Or use VS Code tasks: `Cmd+Shift+P` → "Run Task" → "Start All Services"
 
-## 📚 API Endpoints
+##  API Endpoints
 
 ### Authentication (`/api/auth`)
 | Method | Endpoint | Description |
@@ -140,7 +140,7 @@ Or use VS Code tasks: `Cmd+Shift+P` → "Run Task" → "Start All Services"
 | POST | `/api/chats/{id}/rename` | Rename chat |
 | POST | `/chat/stream` | SSE streaming Q&A |
 
-## 🎨 Frontend
+##  Frontend
 
 Access the chat UI at `http://localhost:8000/`
 
@@ -151,7 +151,7 @@ Features:
 - Chat history sidebar
 - Markdown rendering
 
-## 🧪 Testing
+##  Testing
 
 ```bash
 # Run all tests
@@ -161,12 +161,12 @@ pytest tests/
 pytest tests/test_health.py -v
 ```
 
-## 📝 API Documentation
+##  API Documentation
 
 - **Swagger UI**: http://localhost:8000/docs
 - **ReDoc**: http://localhost:8000/redoc
 
-## 🔧 Tech Stack
+##  Tech Stack
 
 - **Backend**: FastAPI, SQLAlchemy, Pydantic
 - **Database**: MySQL, Redis, ChromaDB
@@ -174,10 +174,4 @@ pytest tests/test_health.py -v
 - **Task Queue**: Celery
 - **Frontend**: Vanilla JS, CSS3
 
-## 📄 License
 
-MIT License
-
----
-
-Built with ❤️ using FastAPI
