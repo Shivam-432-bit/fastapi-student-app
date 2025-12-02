@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Document Chat — Modern</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/frontend/styles.css">
+</head>
+<body>
+  <div class="app" id="appRoot">
+    <aside class="sidebar" id="sidebar" aria-hidden="false">
+      <div class="sidebar-header">
+        <div>
+          <h3>Documents</h3>
+          <div class="small">Choose a PDF for context</div>
+        </div>
+      </div>
+
+      <div class="sidebar-section">
+        <select id="pdfSelect" class="pdf-select" aria-label="Select PDF"></select>
+        <div class="upload-row">
+          <button class="upload-btn" id="uploadBtn">Upload PDF</button>
+          <input id="uploadInput" type="file" accept="application/pdf" />
+        </div>
+      </div>
+
+      <div class="sidebar-section divider">
+        <div class="sidebar-section-header">
+          <div class="small">Chats</div>
+          <button class="small-btn" id="newChatBtn" title="New Chat">+ New</button>
+        </div>
+      </div>
+
+      <div class="chat-list" id="chatList" role="list" aria-label="Saved chats"></div>
+    </aside>
+
+    <main class="main" id="mainPanel">
+      <header class="header">
+        <div class="header-left">
+          <button class="hambtn" id="sidebarToggle" aria-expanded="true" title="Toggle chats (press C)">
+            <span class="icon">☰</span>
+            <span class="small">Chats</span>
+          </button>
+          <div class="header-titles">
+            <div class="doc-title" id="currentChatTitle">New chat</div>
+            <div class="small" id="currentDocLabel">No PDF selected</div>
+          </div>
+        </div>
+        <div class="header-right">
+          <select id="themePicker" class="theme-select" aria-label="Theme">
+            <option value="system">Auto (system)</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+            <option value="coffee">Coffee</option>
+          </select>
+          <button class="small-btn" id="deleteBtn" title="Delete chat">Delete</button>
+        </div>
+      </header>
+
+      <div class="chat-body">
+        <div class="chat-column" id="chatWindow">
+          <div class="placeholder small" id="placeholder">Start a new conversation — choose a PDF and ask a question.</div>
+        </div>
+      </div>
+
+      <footer class="footer">
+        <input id="messageInput" class="input" placeholder="Type your question..." aria-label="Message input" />
+        <button id="sendBtn" class="send-btn">Send</button>
+      </footer>
+    </main>
+  </div>
+  <script src="/frontend/app.js" defer></script>
+</body>
+</html>

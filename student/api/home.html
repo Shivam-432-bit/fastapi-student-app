@@ -88,9 +88,10 @@ html,body { height:100%; margin:0; background:var(--bg); color:var(--text); -web
 .chat-list { padding:12px 12px; overflow:auto; display:flex; flex-direction:column; gap:8px; }
 .chat-item { display:flex; justify-content:space-between; gap:10px; align-items:center; padding:10px; border-radius:10px; cursor:pointer; transition: background var(--transition), transform var(--transition); }
 .chat-item:hover { transform: translateY(-2px); }
-.chat-item .meta { display:flex; flex-direction:column; gap:4px; }
+.chat-item .meta { display:flex; flex-direction:column; gap:6px; }
 .chat-title { font-weight:600; font-size:14px; color:var(--text); }
-.chat-snippet { font-size:13px; color:var(--muted); max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.chat-snippet { font-size:13px; color:var(--muted); max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:normal; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+.chat-item { min-height:56px; }
 .chat-item.active { background: linear-gradient(90deg, rgba(79,70,229,0.06), rgba(79,70,229,0.02)); border:1px solid rgba(79,70,229,0.08); }
 
 /* MAIN PANEL */
@@ -113,6 +114,8 @@ html,body { height:100%; margin:0; background:var(--bg); color:var(--text); -web
 .msg { max-width:78%; padding:12px 14px; border-radius:14px; font-size:15px; line-height:1.45; white-space:pre-wrap; box-shadow:0 1px 0 rgba(0,0,0,0.02); }
 .msg.user { align-self:flex-end; background:var(--bubble-user); border:1px solid rgba(0,0,0,0.03); border-bottom-right-radius:6px; }
 .msg.assistant { align-self:flex-start; background:var(--bubble-assistant); border:1px solid rgba(0,0,0,0.03); border-bottom-left-radius:6px; }
+/* Paragraph spacing inside message bubbles */
+.msg p { margin: 0 0 0.75em; }
 
 /* typing indicator (three dots) */
 .typing {
@@ -239,6 +242,17 @@ html,body { height:100%; margin:0; background:var(--bg); color:var(--text); -web
 </div>
 
 <script>
+    function md(text) {
+  return text
+    .replace(/^### (.*$)/gim, '<h3>$1</h3>')
+    .replace(/^## (.*$)/gim, '<h2>$1</h2>')
+    .replace(/^# (.*$)/gim, '<h1>$1</h1>')
+    .replace(/\*\*(.*?)\*\*/gim, '<b>$1</b>')
+    .replace(/\*(.*?)\*/gim, '<i>$1</i>')
+    .replace(/^- (.*$)/gim, '<li>$1</li>')
+    .replace(/\n/g, '<br>');
+}
+
 /* ------------------------------
    Client-side logic
    ------------------------------ */
@@ -312,53 +326,74 @@ function markdownToHtml(md) {
   if (!md && md !== 0) return '';
   let text = String(md);
 
-  // Escape raw HTML first
+  // Escape HTML
   text = escapeHtmlRaw(text);
 
-  // Convert code blocks (```): simple approach - replace triple backticks with <pre><code>
-  // Handle block code (```)
-  text = text.replace(/```([\s\S]*?)```/g, function(_, code){
-    return '<pre><code>' + code.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</code></pre>';
+  // Normalize common LLM formatting issues:
+  // 1) Insert paragraph breaks when sentences/headings run together (e.g. "Question?Answer" -> "Question?\n\nAnswer")
+  // 2) Collapse excessive blank lines into two so paragraphs render cleanly
+  text = text.replace(/([.?!])([A-Z#\*])/g, '$1\n\n$2');
+  text = text.replace(/\n{3,}/g, '\n\n');
+
+  // ---------------------------------------------------
+  // FIX SPACING: Compress 3+ consecutive blank lines into 1 empty paragraph
+  // ---------------------------------------------------
+  text = text.replace(/\n{3,}/g, '\n\n');
+
+  // ---------------------------------------------------
+  // CODE BLOCKS
+  // ---------------------------------------------------
+  text = text.replace(/```([\s\S]*?)```/g, (_, code) => {
+    return `<pre><code>${code.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</code></pre>`;
   });
 
-  // Headings (### to <h3>, ## -> h2, # -> h1)
+  // ---------------------------------------------------
+  // HEADINGS
+  // ---------------------------------------------------
   text = text.replace(/^### (.*)$/gm, '<h3>$1</h3>');
   text = text.replace(/^## (.*)$/gm, '<h2>$1</h2>');
   text = text.replace(/^# (.*)$/gm, '<h1>$1</h1>');
 
-  // Bold: **text**
+  // ---------------------------------------------------
+  // BASIC FORMATTING
+  // ---------------------------------------------------
+  text = text.replace(/\*\*\*(.*?)\*\*\*/g, '<strong><em>$1</em></strong>');
   text = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-
-  // Italic: *text* (avoid conflict with bold)
   text = text.replace(/(^|[^*])\*(?!\*)(.*?)\*(?!\*)/g, '$1<em>$2</em>');
-
-  // Underline: __text__
   text = text.replace(/__(.*?)__/g, '<u>$1</u>');
-
-  // Inline code: `code`
   text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
 
-  // Lists: lines starting with - or *
-  // Convert groups of list items into <ul>
-  text = text.replace(/(^|\n)([ \t]*[-\*] .+(?:\n[ \t]*[-\*] .+)*)/g, function(_, lead, listBlock){
-    const items = listBlock.trim().split(/\n/).map(l => l.replace(/^[\s]*[-\*]\s+/, '').trim());
-    return '\n<ul>\n' + items.map(it => '<li>' + it + '</li>').join('\n') + '\n</ul>\n';
+  // ---------------------------------------------------
+  // LISTS (- item / * item)
+  // ---------------------------------------------------
+  text = text.replace(
+    /(^|\n)([ \t]*[-\*] .+(?:\n[ \t]*[-\*] .+)*)/g,
+    (_, lead, listBlock) => {
+      const items = listBlock
+        .trim()
+        .split(/\n/)
+        .map(l => l.replace(/^[\s]*[-\*]\s+/, '').trim());
+      return `${lead}<ul>\n${items.map(it => `<li>${it}</li>`).join('\n')}\n</ul>`;
+    }
+  );
+
+  // ---------------------------------------------------
+  // PARAGRAPH & LINE BREAK HANDLING: produce <p> blocks
+  // ---------------------------------------------------
+  // Collapse runs of 3+ newlines into exactly two to avoid huge gaps
+  text = text.replace(/\n{3,}/g, '\n\n');
+
+  // Split into paragraphs on two-or-more newlines, keep single newlines as <br>
+  const paragraphs = text.split(/\n{2,}/).map(p => p.trim()).filter(p => p.length > 0).map(p => {
+    // convert single newlines within a paragraph to <br>
+    const inner = p.replace(/\n/g, '<br>');
+    return `<p>${inner}</p>`;
   });
 
-  // Convert multiple consecutive line breaks into paragraphs / <br>
-  // Replace two or more newlines with </p><p>
-  text = text.replace(/\n{2,}/g, '</p><p>');
-  // single newlines -> <br>
-  text = text.replace(/\n/g, '<br>');
-
-  // Wrap in paragraph if not already block-level
-  // If text already contains <h1|h2|h3|ul|pre|p> at start, don't wrap
-  if (!/^\s*<(h1|h2|h3|ul|pre|p)/i.test(text.trim())) {
-    text = '<p>' + text + '</p>';
-  }
-
-  return text;
+  return paragraphs.join('');
 }
+
+
 
 /* GPT-style title generator (simple offline heuristics) */
 async function generateDynamicTitle(userMsg, assistantMsg) {

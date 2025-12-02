@@ -1,4 +1,4 @@
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Request
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 import json
 import httpx
@@ -77,7 +77,7 @@ def get_context_for_file(filename: str) -> str:
         return "\n\n".join(docs)
 
     except Exception as exc:
-        print("[ws_router] Context load error:", exc)
+        print("[context_loader] Context load error:", exc)
         return ""
 
 
@@ -121,98 +121,33 @@ async def stream_ollama(prompt: str):
 def build_prompt(question, source, context, history_text, semantic_text):
 
     return f"""
-You are a helpful PDF assistant for the document "{source}".
+You are a helpful assistant for the PDF: "{source}".
 
-Your behavior rules:
-1. Use the provided PDF context whenever it contains relevant information.
-2. You ARE allowed to summarize the PDF, describe what the PDF contains, explain concepts that appear in the PDF, or answer broad questions like “What is in this PDF?”.
-3. If the PDF context is partial, you may infer the answer from the document's overall topic.
-4. Only refuse questions that are *completely* unrelated to the PDF (e.g., “write a poem”, “tell a joke”, “give dating advice”).
-5. If information is truly not found anywhere in the PDF and cannot be inferred, say: “I could not find that information in the document.”
+Please format your answer using basic Markdown:
 
-CONTEXT EXTRACTS:
+- Use headings (#, ##)
+- Use **bold** and *italic*
+- Use bullet lists (-)
+- Use numbered lists (1.)
+
+Do not use tables or code blocks unless needed.
+Do NOT output plain text only.
+Use proper newlines.
+
+PDF Context:
 {context}
 
-CHAT HISTORY (last 10 turns):
+Conversation History:
 {history_text}
 
-RELEVANT MEMORY:
+Relevant Memory:
 {semantic_text}
 
-USER QUESTION:
+User Question:
 {question}
 
-Final Answer:
+Markdown Answer:
 """
-
-
-# --------------------------------------------------------
-#                WEBSOCKET CHAT
-# --------------------------------------------------------
-@router.websocket("/ws/chat")
-async def websocket_chat(websocket: WebSocket):
-    await websocket.accept()
-
-    user_id = "user123"
-
-    try:
-        while True:
-
-            msg = await websocket.receive_text()
-            data = json.loads(msg)
-
-            chat_id = data.get("chat_id")
-            question = data.get("question")
-            source = data.get("source")
-
-            if not chat_id:
-                await websocket.send_text(json.dumps({"error": "missing chat_id"}))
-                continue
-
-            if not question:
-                await websocket.send_text(json.dumps({"error": "missing question"}))
-                continue
-
-            if not source:
-                await websocket.send_text(json.dumps({"error": "missing source"}))
-                continue
-
-            # Save user message
-            save_message(user_id, chat_id, "user", question)
-
-            # Load last messages
-            history = get_history(user_id, chat_id)[-10:]
-            history_text = "\n".join(f"{h['role']}: {h['message']}" for h in history)
-
-            # Semantic memory search
-            semantic = search_memory(user_id, question)
-            semantic_text = "\n".join(semantic) if semantic else ""
-
-            # PDF Context
-            context = get_context_for_file(source)
-
-            # Build prompt
-            prompt = build_prompt(question, source, context, history_text, semantic_text)
-
-            reply_text = ""
-
-            # Stream to client
-            try:
-                async for token in stream_ollama(prompt):
-                    reply_text += token
-                    await websocket.send_text(token)
-            except Exception as exc:
-                await websocket.send_text(json.dumps({"error": str(exc)}))
-
-            save_message(user_id, chat_id, "assistant", reply_text)
-
-            if len(question.split()) > 4:
-                add_memory(user_id, question)
-
-            await websocket.send_text("[END]")
-
-    except WebSocketDisconnect:
-        print("WebSocket disconnected")
 
 
 # --------------------------------------------------------
@@ -272,4 +207,3 @@ async def http_chat(request: Request):
         yield "data: [END]\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
-      

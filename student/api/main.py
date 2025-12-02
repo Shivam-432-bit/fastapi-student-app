@@ -1,7 +1,10 @@
 import student.core.chromadb_compat  # MUST be first to patch chromadb
 
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 from sqlalchemy.exc import SQLAlchemyError
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,6 +16,10 @@ from student.routers import bulk_upload
 from student.api import ws_router
 from student.api.chats_router import router as chats_router
 from student.api.websocket_test import router as test_ws_router
+
+BASE_DIR = Path(__file__).resolve().parents[2]
+FRONTEND_DIR = BASE_DIR / "frontend"
+FRONTEND_INDEX = FRONTEND_DIR / "index.html"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -47,10 +54,12 @@ app.include_router(students.router, prefix="/api")
 app.include_router(bulk_upload.router, prefix="/api")
 app.include_router(chats_router, tags=["chats"])
 
+app.mount("/frontend", StaticFiles(directory=FRONTEND_DIR), name="frontend")
+
 # Root endpoint now serves a simple frontend page. API docs remain available at `/docs`.
 @app.get("/")
 def read_root():
-    return FileResponse("student/api/home.html", media_type="text/html")
+    return FileResponse(str(FRONTEND_INDEX), media_type="text/html")
 
 if __name__ == "__main__":
     import uvicorn
@@ -59,4 +68,4 @@ if __name__ == "__main__":
 
 @app.get("/home")
 def read_home():
-    return FileResponse("student/api/home.html", media_type="text/html")
+    return FileResponse(str(FRONTEND_INDEX), media_type="text/html")
