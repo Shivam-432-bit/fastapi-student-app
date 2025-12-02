@@ -138,8 +138,13 @@ function applyInlineFormatting(text) {
   if (text === null || text === undefined) return "";
   let html = escapeHtmlRaw(String(text));
   const codePlaceholders = [];
+  html = html.replace(/``([^`]+)``/g, (_, code) => {
+    const token = `___DBLCODE_${codePlaceholders.length}___`;
+    codePlaceholders.push(`<code>${code}</code>`);
+    return token;
+  });
   html = html.replace(/`([^`]+)`/g, (_, code) => {
-    const token = `__CODE_${codePlaceholders.length}__`;
+    const token = `___CODE_${codePlaceholders.length}___`;
     codePlaceholders.push(`<code>${code}</code>`);
     return token;
   });
@@ -153,7 +158,8 @@ function applyInlineFormatting(text) {
     if (!safeUrl) return label;
     return `<a href="${safeUrl}" target="_blank" rel="noopener">${label}</a>`;
   });
-  html = html.replace(/__CODE_(\d+)__/g, (_, idx) => codePlaceholders[Number(idx)] || "");
+  html = html.replace(/___DBLCODE_(\d+)___/g, (_, idx) => codePlaceholders[Number(idx)] || "");
+  html = html.replace(/___CODE_(\d+)___/g, (_, idx) => codePlaceholders[Number(idx)] || "");
   return html;
 }
 
@@ -161,10 +167,7 @@ function markdownToHtml(md) {
   if (!md && md !== 0) return "";
   let normalized = String(md).replace(/\r\n/g, "\n");
   normalized = normalized
-    .replace(/([^\n])(#{1,6}\s+)/g, "$1\n$2")
-    .replace(/([^\n])([>*+]\s+)/g, "$1\n$2")
-    .replace(/([^\n])(\-\s+)/g, "$1\n$2")
-    .replace(/([^\n])(\d+\.\s+)/g, "$1\n$2")
+    .replace(/([.!?])\s*(#{1,6}\s+)/g, "$1\n\n$2")
     .replace(/([^\n])([=-]{3,})(?=[^\n])/g, "$1\n$2")
     .replace(/([=-]{3,})([^\n])/g, "$1\n$2");
   const lines = normalized.split("\n");
@@ -251,7 +254,7 @@ function markdownToHtml(md) {
     }
 
     const inlineUnderline = stripped.match(/^(.+?)([=-]{3,})$/);
-    if (inlineUnderline && inlineUnderline[1].trim()) {
+    if (inlineUnderline && inlineUnderline[1].trim() && inlineUnderline[1].trim().length > 2) {
       flushParagraph();
       flushList();
       parts.push(`<p class="msg-heading"><strong>${applyInlineFormatting(inlineUnderline[1].trim())}</strong></p>`);
@@ -321,36 +324,25 @@ function markdownToHtml(md) {
 }
 
 async function generateDynamicTitle(userMsg, assistantMsg) {
-  let text = assistantMsg || userMsg || "New Chat";
-  if (assistantMsg && assistantMsg.length > 40) {
-    text = assistantMsg;
+  // Always prefer the user's question as the chat name
+  let text = userMsg || assistantMsg || "New Chat";
+  
+  // Light cleanup only - keep the question intact
+  text = text.replace(/\n+/g, " ");                   // collapse newlines
+  text = text.replace(/\s+/g, " ").trim();            // normalize whitespace
+  
+  // Capitalize first letter
+  if (text.length > 0) {
+    text = text.charAt(0).toUpperCase() + text.slice(1);
   }
-  text = text.replace(/\s+/g, " ").trim();
-  if (userMsg && userMsg.includes("?")) {
-    text = userMsg.replace(/\?+$/, "").trim();
+  
+  // Enforce reasonable length limit
+  if (text.length > 60) {
+    text = text.slice(0, 57) + "...";
   }
-  let title = text;
-  const separators = [":", "—", " - ", ". "];
-  for (const sep of separators) {
-    if (title.includes(sep)) {
-      title = title.split(sep)[0].trim();
-      break;
-    }
-  }
-  if (title.length > 48) {
-    const words = title.split(" ");
-    let acc = "";
-    for (const w of words) {
-      if ((acc + " " + w).trim().length > 48) break;
-      acc = (acc + " " + w).trim();
-    }
-    if (acc) title = acc;
-    else title = title.slice(0, 48);
-  }
-  title = title.charAt(0).toUpperCase() + title.slice(1);
-  title = title.replace(/[.,:;!?]+$/, "");
-  if (title.length < 3) title = "New Chat";
-  return title;
+  
+  if (text.length < 3) text = "New Chat";
+  return text;
 }
 
 function isMobile() {
@@ -551,6 +543,17 @@ function updateHeaderTitle(title) {
   currentChatTitleEl.textContent = title || "New chat";
 }
 
+function updateChatTitleInSidebar(chatId, newTitle) {
+  if (!chatId) return;
+  const chatItem = chatListEl.querySelector(`[data-chat-id="${chatId}"]`);
+  if (chatItem) {
+    const titleEl = chatItem.querySelector(".chat-title");
+    if (titleEl) {
+      titleEl.textContent = newTitle;
+    }
+  }
+}
+
 async function loadChatHistory(chatId) {
   try {
     const res = await fetch(`/api/chats/${chatId}`);
@@ -596,11 +599,13 @@ async function sendQuestion() {
   await ensureActiveChat();
   if (isMobile()) setSidebar(false);
   addLocalMessage("user", q);
-  if (!currentChatTitleEl.textContent || currentChatTitleEl.textContent === "New chat") {
-    const title = await generateDynamicTitle(q, null);
-    updateHeaderTitle(title);
-    renameChatOnServer(activeChatId, title);
-  }
+  
+  // Always update title with user's question immediately
+  const title = await generateDynamicTitle(q, null);
+  updateHeaderTitle(title);
+  updateChatTitleInSidebar(activeChatId, title);
+  renameChatOnServer(activeChatId, title);
+  
   messageInput.value = "";
   if (streamController) {
     try {
@@ -650,12 +655,6 @@ async function sendQuestion() {
           if (bubble) bubble.dataset.partial = "done";
           if (typingBubble) typingBubble.remove();
           await loadChatList();
-          const assistantCount = document.querySelectorAll(".msg.assistant").length;
-          if (assistantCount === 1) {
-            const newTitle = await generateDynamicTitle(null, partial);
-            updateHeaderTitle(newTitle);
-            renameChatOnServer(activeChatId, newTitle);
-          }
           return;
         }
         try {

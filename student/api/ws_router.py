@@ -121,18 +121,19 @@ async def stream_ollama(prompt: str):
 def build_prompt(question, source, context, history_text, semantic_text):
 
     return f"""
-You are a helpful assistant for the PDF: "{source}".
+You are a helpful assistant analyzing the PDF: "{source}".
 
-Please format your answer using basic Markdown:
+Answer naturally and conversationally. Use markdown formatting sparingly:
+- Only add headings (##) when introducing major new sections
+- Use **bold** for key terms or important points
+- Use bullet lists (-) only when listing multiple related items
+- Keep paragraphs flowing naturally
 
-- Use headings (#, ##)
-- Use **bold** and *italic*
-- Use bullet lists (-)
-- Use numbered lists (1.)
-
-Do not use tables or code blocks unless needed.
-Do NOT output plain text only.
-Use proper newlines.
+Avoid:
+- Excessive structure (don't create headings for every sentence)
+- Redundant labels like "Conversation History", "Markdown Response", "Introduction"
+- Code blocks unless the content is actual code
+- Repeating the user's question back to them
 
 PDF Context:
 {context}
@@ -146,7 +147,7 @@ Relevant Memory:
 User Question:
 {question}
 
-Markdown Answer:
+Your answer:
 """
 
 
