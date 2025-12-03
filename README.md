@@ -174,4 +174,9 @@ pytest tests/test_health.py -v
 - **Task Queue**: Celery
 - **Frontend**: Vanilla JS, CSS3
 
+## ChromaDB compatibility note
+
+Chromadb relies on `pydantic.BaseSettings` and may validate environment settings at import/initialization time. This project includes a lightweight compatibility shim at `student/core/chromadb_compat.py` to avoid import-time errors when using `pydantic-settings` (Pydantic v2). The shim temporarily adjusts environment variables and maps `pydantic.BaseSettings` to `pydantic_settings.BaseSettings` so Chromadb can initialize correctly. This is a runtime workaround and is intended as a short-term fix; for production use, consider running Chromadb as a separate service, aligning dependency versions, or applying a more robust compatibility layer.
+
+
 
