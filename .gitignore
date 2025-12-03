@@ -20,6 +20,9 @@ server.log
 ollama.log
 celery.log
 nohup.out
+logs/
+.uvicorn.pid
+.celery.pid
 
 # macOS
 .DS_Store
@@ -30,7 +33,9 @@ student/chroma_store/
 dump.rdb
 
 # IDE
-.vscode/
+# Keep most .vscode files local but track project-level tasks.json
+.vscode/*
+!.vscode/tasks.json
 .idea/
 
 # Temporary files
